@@ -3,24 +3,95 @@
 Demo strategy: real retailers will block automation, so build against our own mock retailer page
 (price-adjustment form) for the live demo, and keep real-retailer flows as stretch goals.
 Take a screenshot at every step; L2 attaches them to AgentEvents for the activity feed.
+
+Form contract the demo-store page (L1) must satisfy; see docs/demo-store-contract.md.
+Elements are found by `data-testid`:
+  order-number, product-name, price-paid, current-price  (inputs; current-price is in dollars)
+  message                                                 (textarea)
+  submit                                                  (button)
+  claim-confirmation                                      (shown after submit; its text is the reference)
 """
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from playwright.async_api import async_playwright
 
 from app.config import get_settings
 from app.models import Claim, Purchase
 
-settings = get_settings()
+SCREENSHOT_ROOT = Path("artifacts/claim_screenshots")
+CONFIRMATION_TIMEOUT_MS = 10_000
 
 
-async def submit(claim: Claim, purchase: Purchase, message: str) -> list[str]:
+class ClaimSubmissionError(RuntimeError):
+    """The bot couldn't complete the form. `screenshots` holds whatever it captured so far."""
+
+    def __init__(self, message: str, screenshots: list[str]):
+        super().__init__(message)
+        self.screenshots = screenshots
+
+
+def _dollars(cents: int) -> str:
+    return f"{cents / 100:.2f}"
+
+
+async def submit(
+    claim: Claim,
+    purchase: Purchase,
+    message: str,
+    *,
+    claim_url: str | None = None,
+    screenshot_dir: Path | None = None,
+) -> list[str]:
     """Fill + submit the claim form. Returns screenshot file paths in step order.
 
-    TODO(L3):
-      from playwright.async_api import async_playwright
-      async with async_playwright() as p:
-          browser = await p.chromium.launch(headless=settings.playwright_headless)
-          page = await browser.new_page()
-          await page.goto(<mock retailer claim URL>)
-          ... fill order number, product, new price, message ...
-          await page.screenshot(path=...)
+    Raises ClaimSubmissionError (carrying the screenshots taken so far) on failure so L2 can mark
+    the claim `failed` and still show what happened. Runs headful when PLAYWRIGHT_HEADLESS=false,
+    which is what the live demo uses.
     """
-    raise NotImplementedError
+    settings = get_settings()
+    url = claim_url or settings.retailer_claim_url
+    out = screenshot_dir or SCREENSHOT_ROOT / claim.id
+    out.mkdir(parents=True, exist_ok=True)
+    shots: list[str] = []
+
+    async def snap(page, name: str) -> None:
+        path = out / f"{len(shots) + 1:02d}_{name}.png"
+        await page.screenshot(path=str(path), full_page=True)
+        shots.append(str(path))
+
+    new_price = purchase.price_paid_cents - claim.refund_cents
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=settings.playwright_headless, slow_mo=0 if settings.playwright_headless else 250
+        )
+        try:
+            page = await browser.new_page(viewport={"width": 1280, "height": 900})
+            page.set_default_timeout(CONFIRMATION_TIMEOUT_MS)
+            await page.goto(url, wait_until="domcontentloaded")
+            await snap(page, "form_loaded")
+
+            field = lambda tid: page.get_by_test_id(tid)  # noqa: E731
+            await field("order-number").fill(purchase.order_number or "")
+            await field("product-name").fill(purchase.product_name)
+            await field("price-paid").fill(_dollars(purchase.price_paid_cents))
+            await field("current-price").fill(_dollars(new_price))
+            await field("message").fill(message)
+            await snap(page, "form_filled")
+
+            await field("submit").click()
+            confirmation = field("claim-confirmation")
+            await confirmation.wait_for(state="visible", timeout=CONFIRMATION_TIMEOUT_MS)
+            await snap(page, "confirmation")
+            return shots
+        except Exception as exc:
+            try:
+                await snap(page, "error")
+            except Exception:
+                pass
+            raise ClaimSubmissionError(f"Claim submission failed: {exc}", shots) from exc
+        finally:
+            await browser.close()
