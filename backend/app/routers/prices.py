@@ -1,16 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
 
-from app import mock_data
-from app.config import get_settings
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.deps import current_user
 from app.models import PricePoint
+from data.repository import PersistenceError, repo
 
 router = APIRouter(prefix="/prices", tags=["prices"])
-settings = get_settings()
 
 
 @router.get("/{product_id}", response_model=list[PricePoint])
-async def price_history(product_id: str, days: int = 30) -> list[PricePoint]:
-    if settings.mock_mode:
-        return mock_data.price_history(product_id, days)
-    # TODO(L2): return await data.timescale.price_history(product_id, days)
-    raise HTTPException(501, "Not implemented")
+async def price_history(product_id: str, days: int = 30, user_id: str = Depends(current_user)) -> list[PricePoint]:
+    if days < 1 or days > 365:
+        raise HTTPException(status_code=422, detail="days must be between 1 and 365.")
+    try:
+        return await repo.price_history(user_id, product_id, days)
+    except PersistenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -19,3 +19,8 @@ psycopg[binary,pool]
 # Layer 5 — Financial
 solana
 solders
+
+# Tests and token encryption
+pytest
+cryptography
+eval_type_backport   # lets Pydantic read X | Y annotations on Python 3.9

@@ -2,6 +2,10 @@
 
 Owner: Layer 4 (Database). Field names match `backend/app/models.py`.
 
+The runtime schema is created by `backend/data/repository.py` on connect. Demo purchases are Harbor & Co catalog rows with `data_origin: "demo"`. Do not seed invented prices for other retailers.
+
+Price rows include `source`, `data_origin`, `user_id`, and `collection_status`. A `purchase_record` row is the receipt price, not a market observation.
+
 ## MongoDB Atlas (application state)
 
 | Collection | Holds | Key indexes |

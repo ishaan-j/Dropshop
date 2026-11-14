@@ -1,20 +1,50 @@
-"""Sentient OS integration: discover purchases from the user's on-device context.
+"""Sentient OS integration.
 
-Heads-up: Sentient OS is an on-device Mac app (open source, AGPL-3.0) that reads mail/messages/files
-locally overnight. It is not a hosted API. Before building, confirm with the sponsor what counts as an
-integration (e.g. reading its local Markdown knowledge base, or contributing a Dropshot hook upstream).
-
-Always keep the fallback path working: sample receipt emails in fixtures/ (or Gmail) → receipt_extractor.
+Sentient OS keeps knowledge in ordinary Markdown at ~/Sentient OS - Knowledge Base/
+(https://github.com/Sentient-OS-Labs/sentient-os). There is no cloud orchestration
+SDK in that documentation. DropShop only reads that folder after the user opts in,
+and only notes that look like orders. It does not pretend a local agent run is a
+Sentient OS execution.
 """
+
+from __future__ import annotations
+
+from pathlib import Path
 
 from app.config import get_settings
 
-settings = get_settings()
+ORDER_HINTS = ("order number:", "product id:", "order date:")
 
 
-async def fetch_recent_receipts(since_iso: str) -> list[str]:
-    """Return raw receipt texts found since `since_iso`.
+def knowledge_dir() -> Path:
+    settings = get_settings()
+    raw = settings.sentient_knowledge_dir.strip() or str(Path.home() / "Sentient OS - Knowledge Base")
+    return Path(raw).expanduser()
 
-    TODO(L3): if settings.sentient_os_enabled → read from Sentient OS; else → load fixture receipts.
-    """
-    raise NotImplementedError
+
+def knowledge_available() -> bool:
+    path = knowledge_dir()
+    return path.is_dir()
+
+
+def read_order_notes(limit: int = 20) -> list[dict]:
+    root = knowledge_dir()
+    if not root.is_dir():
+        return []
+    notes = []
+    for path in sorted(root.rglob("*.md")):
+        if path.name.lower() == "writingstyle.md":
+            continue
+        if len(notes) >= limit:
+            break
+        try:
+            if path.stat().st_size > 20_000:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lowered = text.lower()
+        if not any(hint in lowered for hint in ORDER_HINTS):
+            continue
+        notes.append({"path": str(path.relative_to(root)), "text": text[:20_000]})
+    return notes

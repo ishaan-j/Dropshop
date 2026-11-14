@@ -1,16 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
 
-from app import mock_data
-from app.config import get_settings
+from fastapi import APIRouter, Depends
+
+from app.deps import current_user
 from app.models import AgentEvent
+from data.repository import repo
 
 router = APIRouter(prefix="/activity", tags=["activity"])
-settings = get_settings()
 
 
 @router.get("", response_model=list[AgentEvent])
-async def activity_feed(limit: int = 50) -> list[AgentEvent]:
-    if settings.mock_mode:
-        return mock_data.ACTIVITY[:limit]
-    # TODO(L2): return await data.mongo.list_events(settings.demo_user_id, limit)
-    raise HTTPException(501, "Not implemented")
+async def activity_feed(limit: int = 50, user_id: str = Depends(current_user)) -> list[AgentEvent]:
+    capped = min(max(limit, 1), 200)
+    return await repo.list_events(user_id, capped)

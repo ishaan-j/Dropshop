@@ -1,34 +1,54 @@
-// Placeholder dashboard (Layer 1 owner replaces this). See frontend/LAYER.md for the task list.
-import { api, formatCents } from "@/lib/api";
+import Link from "next/link";
 
-export default async function Home() {
-  const [savings, purchases] = await Promise.all([
-    api.savings().catch(() => null),
-    api.purchases().catch(() => []),
-  ]);
+const STEPS = [
+  ["Purchase", "An order confirmation is the start."],
+  ["Monitor", "Prices are checked from a named source."],
+  ["Detect", "A lower price becomes a drop event."],
+  ["Verify", "Policy, window, and exclusions decide eligibility."],
+  ["Claim", "A claim is prepared. You approve it."],
+  ["Recover", "A refund is recorded only when a source confirms it."],
+  ["Save", "You can earmark savings, then sign a Devnet transfer yourself."],
+];
 
+export default function Home() {
   return (
-    <main className="mx-auto w-full max-w-4xl p-10 font-sans">
-      <h1 className="text-3xl font-semibold tracking-tight">Dropshot</h1>
-      <p className="mt-1 text-zinc-500">Your purchases keep getting cheaper. Now so do you.</p>
-
-      <section className="mt-8 rounded-xl border p-6">
-        <h2 className="text-sm uppercase text-zinc-500">Recovered so far</h2>
-        <p className="mt-1 text-4xl font-bold">
-          {savings ? formatCents(savings.total_recovered_cents) : "API offline: start the backend"}
+    <div className="landing">
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span className="brand">DropShop</span>
+        <Link className="btn primary" href="/app">
+          Open the dashboard
+        </Link>
+      </header>
+      <section className="hero">
+        <div>
+          <p className="muted">Price recovery, with the receipt trail left visible</p>
+          <h1>Find the drop. See why it qualifies. Keep the refund yours to approve.</h1>
+        </div>
+        <p className="lede">
+          DropShop watches purchases, compares them with an authorized price, and checks the
+          retailer&apos;s adjustment window. A lower price is not a refund. You approve every claim,
+          and a Solana transfer is a separate step you sign.
         </p>
       </section>
-
-      <section className="mt-6 grid gap-3">
-        {purchases.map((p) => (
-          <div key={p.id} className="flex justify-between rounded-lg border p-4">
-            <span>
-              {p.product_name} <span className="text-zinc-500">· {p.retailer}</span>
-            </span>
-            <span className="font-mono text-sm">{p.status}</span>
-          </div>
+      <section className="steps">
+        {STEPS.map(([title, copy]) => (
+          <article className="step" key={title}>
+            <b>{title}</b>
+            {copy}
+          </article>
         ))}
       </section>
-    </main>
+      <section className="agents">
+        <article className="panel">
+          <h2 className="serif" style={{ marginTop: 0 }}>Four agents, one trail</h2>
+          <p>Receipt, price, eligibility, and claim. Each run is stored with a time and a result. The Agent Center reads those records. It does not play a canned animation.</p>
+        </article>
+        <article className="panel">
+          <h2 className="serif" style={{ marginTop: 0 }}>What &quot;demo&quot; means</h2>
+          <p>Without Gmail, Gemini, Nessie, or a database, you can run a labeled scenario: sample emails and the Harbor &amp; Co catalog, a store that exists only in this app. Those rows stay marked Demo. They are not your inbox and not a live retailer.</p>
+          <p><Link href="/app">Run it from the dashboard →</Link></p>
+        </article>
+      </section>
+    </div>
   );
 }

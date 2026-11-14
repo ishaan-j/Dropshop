@@ -1,30 +1,42 @@
-# API contract (Frontend ↔ Backend)
+# API contract
 
 Base URL: `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). Interactive docs: `/docs`.
-Hackathon scope: one hardcoded user (`DEMO_USER_ID`), no auth.
-Shapes come from `backend/app/models.py` and are mirrored in `frontend/src/types/index.ts`. **Change both together.**
-Money is always **integer cents** (`*_cents`). Times are ISO-8601 UTC.
 
-| Method | Path | Returns | Notes |
-|---|---|---|---|
-| GET | `/health` | `{status}` | Liveness check for deploys |
-| GET | `/purchases` | `Purchase[]` | Purchases being monitored, newest first |
-| GET | `/purchases/{id}` | `Purchase` | |
-| POST | `/purchases` | `Purchase` | Manual add (body: `PurchaseCreate`), the fallback if email discovery fails |
-| POST | `/purchases/scan` | `{job_id}` | Enqueue a Sentient OS / email scan for new purchases |
-| GET | `/prices/{product_id}?days=30` | `PricePoint[]` | Price history for the chart (from Tiger Data) |
-| GET | `/claims` | `Claim[]` | All claims, newest first |
-| POST | `/claims/{id}/approve` | `Claim` | User approves, which enqueues the Playwright submission |
-| POST | `/claims/{id}/reject` | `Claim` | |
-| GET | `/activity?limit=50` | `AgentEvent[]` | AI activity feed ("Found price drop on…", "Submitting claim…") |
-| GET | `/savings` | `SavingsSummary` | Totals plus the Solana vault balance and address |
+Money is integer cents. Times are ISO-8601 UTC. Records include `data_origin`: `demo`, `live`, or `sandbox`.
 
-## Status lifecycles
+Send `Authorization: Bearer <token>` from `POST /auth/session`. The browser stores that token in `sessionStorage`.
 
-**Purchase.status**: `monitoring` → `drop_detected` → `claim_pending` → `claimed`. It can also go to `expired` when the adjustment window closes.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/health`, `/ready` | Public liveness |
+| POST | `/auth/session` | Creates a user id and token |
+| GET | `/dashboard` | Totals from stored records |
+| GET | `/purchases`, `/purchases/{id}` | This user's purchases |
+| POST | `/purchases` | Manual add. No price is invented. |
+| POST | `/purchases/scan` | Gmail or opted-in Sentient notes. 409 if neither is available. |
+| POST | `/demo/scenario` | Labeled Harbor & Co demo. Refused when `MOCK_MODE=false`. |
+| GET | `/prices/{product_id}?days=` | Observations for this user |
+| GET | `/opportunities` | Eligibility decisions |
+| GET | `/claims` | |
+| POST | `/claims/{id}/approve` | Returns `{claim, submitted, note}`. Does not mark submitted if the browser did not finish. |
+| POST | `/claims/{id}/reject` | |
+| GET | `/activity?limit=` | Stored agent events |
+| GET | `/agents`, `/agents/runs` | Snapshots from stored runs |
+| POST | `/agents/{receipt,price,eligibility}/run` | Runs that agent |
+| POST | `/agents/claims/prepare` | Drafts claims. Does not submit. |
+| GET | `/agents/stream?token=` | Server-sent events |
+| GET | `/savings` | Recovered totals. Vault lamports are null until Devnet verifies them. |
+| GET | `/integrations` | Mode and detail per service |
+| GET/PUT | `/preferences` | Notification flags are stored. Delivery stays `not_connected`. |
+| GET | `/integrations/gmail/start` | OAuth URL, or 409 |
+| POST | `/integrations/gmail/disconnect` | Revokes when Google accepts it |
+| POST | `/integrations/nessie/sandbox-account` | Creates sandbox customer and account |
+| GET | `/integrations/nessie/transactions` | Sandbox purchases and deposits |
+| POST | `/refunds/{id}/demo` | Demo ledger only |
+| POST | `/refunds/{id}/nessie` | Creates a sandbox deposit, then matches it by marker |
+| GET/POST | `/vault`, `/vault/wallet`, `/vault/confirm`, `/vault/demo-allocation` | Devnet verify vs labeled earmark |
+| GET | `/demo/retailer/...` | Public demo store. Not a live merchant. |
 
-**Claim.status**: `awaiting_approval` → `submitting` → `submitted` → `refund_received`. It can also end as `rejected` (by the user or the retailer) or `failed` (the bot errored).
+Purchase status: `monitoring`, `drop_detected`, `claim_pending`, `claimed`, `expired`.
 
-## Polling vs. push
-
-Start with polling `/activity` and `/claims` every ~3s on the dashboard. Upgrade to SSE/WebSocket only if there's time.
+Claim status: `awaiting_approval`, `submitting`, `submitted`, `refund_received`, `rejected`, `failed`.

@@ -1,82 +1,112 @@
-# Dropshot 🎯
+# DropShop
 
-> **Your purchases keep getting cheaper. Now so do you.**
+DropShop finds price drops you would have missed, checks whether a retailer's adjustment window actually applies, and helps you recover the difference. You approve every claim. A Solana transfer is a separate step you sign.
 
-Dropshot watches what you've bought, tracks the price afterward, and when the price drops inside the retailer's price-adjustment window, an AI agent works out whether you qualify and files the claim for you (after you approve it). The money it recovers lands in a savings vault on Solana.
+A lower price is not a refund. Demo data is labeled demo. A missing API key is shown as not connected.
 
-## How it works
+## How a run works
 
-```mermaid
-flowchart LR
-    A[Sentient OS / receipt emails] -->|new purchases| B[FastAPI backend]
-    N[Capital One Nessie] -->|card transactions| B
-    B -->|store purchases, claims, logs| M[(MongoDB Atlas)]
-    B -->|poll prices| T[(Tiger Data / TimescaleDB)]
-    T -->|price drop detected| G[Gemini: policy + eligibility]
-    G -->|eligible → draft claim| U[User approves in dashboard]
-    U --> P[Playwright claim bot submits on retailer site]
-    P -->|refund lands| N
-    N -->|recovered $ recorded| S[Solana savings vault]
-    B --> F[Next.js dashboard]
-```
+1. **Purchase.** Gmail (readonly), an opted-in Sentient OS note, a purchase you type, or the labeled demo emails.
+2. **Monitor.** The price agent records an observation with a source. The only source shipped in this repo is the Harbor & Co demo catalog.
+3. **Detect.** The latest market observation is compared with the price on the receipt.
+4. **Verify.** Window, exclusions, and source are applied in code. Gemini may explain. It cannot overrule.
+5. **Claim.** A packet is prepared. Nothing is submitted until you approve. Automation is allowed only for the in-app demo retailer.
+6. **Recover.** A Nessie sandbox deposit can be matched, or you can record an explicitly labeled demo refund.
+7. **Save.** You can earmark recovered dollars, then sign a Devnet SOL transfer in your own wallet.
 
-1. **Discover**: Sentient OS / receipt emails surface new purchases, and Nessie confirms the card charge.
-2. **Watch**: workers poll the product's price and write every observation to Tiger Data.
-3. **Decide**: on a drop, Gemini reads the retailer's policy and decides whether the purchase is eligible and for how much.
-4. **Approve**: the user sees a drafted claim in the dashboard and taps approve.
-5. **Claim**: the Playwright bot fills in and submits the retailer's price-adjustment form.
-6. **Recover**: the refund deposit shows up in Nessie and gets recorded in the Solana savings vault.
+## Stack
 
-## Repo layout and owners
+| Piece | Role |
+|---|---|
+| Next.js, React, TypeScript, Tailwind, Recharts | UI |
+| FastAPI, Pydantic | API and orchestration |
+| Gemini (`google-genai`) | Structured extraction and explanation when a key is set |
+| MongoDB | Purchases, claims, events, approvals |
+| TimescaleDB / Tiger Data | Price observations and drop events |
+| Gmail API | Readonly order-mail discovery |
+| Nessie | Sandbox accounts, purchases, deposits |
+| Solana Devnet JSON-RPC | Balance and transfer verification |
+| Playwright | Fills the Harbor & Co claim form |
+| Sentient OS | Optional read of the local Markdown knowledge folder |
 
-| Layer | Folder | Owner | What it covers |
-|---|---|---|---|
-| 1. Frontend | [`frontend/`](frontend/LAYER.md) | _TBD_ | Next.js + TS, Tailwind, shadcn/ui, Recharts: dashboard, purchase cards, activity feed, savings charts |
-| 2. Backend | [`backend/app/`](backend/app/LAYER.md) | _TBD_ | FastAPI endpoints, Redis + arq workers, scheduling, price monitoring, claim lifecycle |
-| 3. AI and agents | [`backend/agents/`](backend/agents/LAYER.md) | _TBD_ | Gemini (receipts, policies, eligibility, explanations), Sentient OS, Playwright claim bot |
-| 4. Database | [`backend/data/`](backend/data/LAYER.md) | _TBD_ | Tiger Data hypertables, MongoDB collections and indexes, seed data |
-| 5. Financial | [`backend/finance/`](backend/finance/LAYER.md) + [`solana/`](solana/LAYER.md) | _TBD_ | Nessie sandbox banking, Solana + Anchor savings vault on devnet |
-| 6. Deployment | [`infra/`](infra/LAYER.md) | _TBD_ | Docker images, Vultr hosting for API, workers and browser automation |
+Cursor is the editor used to build this repo. It is not a runtime dependency.
 
-Shared contracts, which everyone should read before writing code:
+## Run it locally
 
-- [`docs/api-contract.md`](docs/api-contract.md): REST endpoints between frontend and backend
-- [`docs/data-model.md`](docs/data-model.md): Mongo collections and Timescale tables
-- [`backend/app/models.py`](backend/app/models.py): Pydantic models (source of truth), mirrored in [`frontend/src/types/index.ts`](frontend/src/types/index.ts)
-- [`docs/architecture.md`](docs/architecture.md): flow, boundaries and the demo script
-
-> Fill in the owners above and in [`.github/CODEOWNERS`](.github/CODEOWNERS) once roles are assigned.
-
-## Quick start
+Python 3.9+ works. 3.12 is what the Docker image uses. Node 20+ for the frontend.
 
 ```bash
-cp .env.example .env              # fill in keys (see comments inside)
-docker compose up -d              # local Redis + TimescaleDB (+ optional local Mongo)
+cp .env.example .env
 
-# Backend (Layers 2–5 share this Python project)
 cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-playwright install chromium
-uvicorn app.main:app --reload     # http://localhost:8000/docs
-arq app.workers.worker.WorkerSettings   # in a second terminal
+uvicorn app.main:app --reload --port 8000
 
-# Frontend
-cd frontend
+cd ../frontend
 npm install
-npm run dev                       # http://localhost:3000
+npm run dev
 ```
 
-Until real integrations land, the API serves **mock data** (`MOCK_MODE=true`), so the frontend can be built in parallel from minute one.
+Open http://localhost:3000. The dashboard button **Run labeled demo scenario** needs no keys.
 
-## Team workflow
+Optional services:
 
-- Branch per layer or feature, for example `frontend/dashboard` or `agents/eligibility`. Open PRs into `main` and don't push to it directly.
-- Change a shared contract (`models.py`, `api-contract.md`, `data-model.md`) **only** in its own small PR, and tell the team in the group chat.
-- Every integration keeps a mock fallback behind `MOCK_MODE` so one broken API never blocks the demo.
+```bash
+docker compose up -d          # Redis + TimescaleDB
+docker compose --profile local-mongo up -d
+```
 
-## Tooling and sponsor tracks
+This machine did not have Docker when the app was built. Without it, Mongo and Timescale show as not connected and records stay in memory, labeled demo.
 
-- **Cursor** is the team's core AI coding agent. Claude Code is also used.
-- **Gemini API**, **MongoDB Atlas**, **Tiger Data**, **Solana**, **Capital One Nessie**, **Sentient OS**, **Vultr**
-- For the *Make it Legendary* raffle, the project description must explain how we use **Cursor** and a **Grok Bot** automation, and we must opt in at submission.
+Playwright, once you want the approve button to submit the demo form:
+
+```bash
+cd backend && source .venv/bin/activate
+pip install playwright
+playwright install chromium
+```
+
+## Environment
+
+Names and safe placeholders are in [`.env.example`](.env.example). Nothing secret belongs in git.
+
+| Variable | If empty |
+|---|---|
+| `GEMINI_API_KEY` | Labeled emails use the deterministic parser. Other mail is not guessed. |
+| `MONGODB_URI` | Localhost down + `MOCK_MODE=true` → memory. A remote URI that fails → error, no silent fallback. |
+| `TIMESCALE_URL` | Same rule for prices. |
+| `NESSIE_API_KEY` | Banking screens say not connected. |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` | Connect button explains that OAuth is not configured. |
+| `SOLANA_VAULT_ADDRESS` | Deposits are disabled. The RPC must be Devnet. |
+| `SESSION_SECRET` | Tokens die when the API process restarts. |
+
+## Tests
+
+```bash
+cd backend && .venv/bin/python -m pytest -q
+cd frontend && npx tsc --noEmit && npx next build
+```
+
+See [TESTING.md](TESTING.md) for the demo script and what was not run.
+
+## Docs
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [PROJECT_STATUS.md](PROJECT_STATUS.md)
+- [TESTING.md](TESTING.md)
+- API reference while the server is up: http://localhost:8000/docs
+
+## Limits you should say out loud
+
+- Harbor & Co is a demo store inside this app. Its prices and policy are not another retailer's.
+- Sample emails are not Gmail.
+- A Nessie match is sandbox data, not a retailer payment into a real account.
+- Devnet SOL is not the refund.
+- No Anchor program is deployed.
+- Sentient OS is not orchestrating the four agents. It can supply notes from its knowledge folder.
+- The app is not deployed on Vultr, and no GoDaddy domain is registered.
+
+## Deploy
+
+`infra/Dockerfile.api` builds the API. `docker-compose.yml` is the local data stack. `infra/docker-compose.prod.yml` is a starting point for a host. Do not describe the app as live on Vultr until a host answers `/health`.
