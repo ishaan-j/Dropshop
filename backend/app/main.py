@@ -23,9 +23,10 @@ async def lifespan(app: FastAPI):
     ticker = None
     if store.name == "memory":
         finance_gateway.reset_simulation(store.seed)
-        if settings.scheduler_enabled:
-            # No worker can see in-memory state, so this process runs the periodic jobs too.
-            ticker = asyncio.create_task(scheduler.run_forever(), name="scheduler")
+    # This process runs the periodic jobs when no worker can: in-memory state is invisible to a
+    # worker, and without Redis there is no worker to hand them to.
+    if settings.scheduler_enabled and (store.name == "memory" or not await jobs.queue_available()):
+        ticker = asyncio.create_task(scheduler.run_forever(), name="scheduler")
     logger.info("Dropshot API ready: store=%s jobs=%s mock_mode=%s", store.name, jobs.mode(), settings.mock_mode)
     try:
         yield
@@ -35,6 +36,8 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await ticker
         await jobs.close()
+        if hasattr(store, "close"):
+            await store.close()  # database connections
 
 
 def create_app() -> FastAPI:

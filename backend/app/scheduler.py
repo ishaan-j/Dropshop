@@ -1,4 +1,5 @@
-"""In-process stand-in for the arq cron jobs, used when jobs run inside the API (in-memory store).
+"""In-process stand-in for the arq cron jobs, used when jobs run inside the API (in-memory store,
+or a database store with no Redis to reach a worker through).
 
 Demo mode: reconcile refunds every 5 s and poll prices every minute. Otherwise every 5 minutes
 and hourly, like the worker's cron schedule.

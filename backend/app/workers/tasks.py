@@ -402,7 +402,7 @@ async def issue_demo_refund(ctx: dict, claim_id: str) -> bool:
     purchase = await store.get_purchase(claim.purchase_id)
     order = f" {purchase.order_number}" if purchase and purchase.order_number else ""
     try:
-        await finance_gateway.issue_refund(claim.refund_cents, f"PRICE ADJUSTMENT {claim.retailer}{order} (claim {claim.id})")
+        await finance_gateway.issue_refund(claim.refund_cents, f"PRICE ADJUSTMENT {claim.retailer}{order} (claim {_claim_ref(claim)})")
     except Exception as exc:
         logger.exception("Demo refund failed for claim %s", claim_id)
         await log_event("error", f"The demo refund for {claim.retailer} didn't go through ({type(exc).__name__}).", claim=claim)
@@ -411,12 +411,36 @@ async def issue_demo_refund(ctx: dict, claim_id: str) -> bool:
     return True
 
 
+_CLAIM_TAG = re.compile(r"\(claim ([^\s)]+)\)")
+
+
+def _claim_ref(claim: Claim) -> str:
+    """What a demo refund's description calls this claim: its id plus when it was submitted.
+
+    The time matters because the demo is reset and run again: the seeded claim keeps its id, and a
+    repeat run has the same order number and amount. The bank only dates deposits to the day, so
+    without it a refund left over from an earlier run would settle the new claim.
+    """
+    return f"{claim.id}/{int(claim.submitted_at.timestamp())}" if claim.submitted_at else claim.id
+
+
 def _match_deposit(claim: Claim, purchase: Purchase | None, deposits: list[BankTxn], used: set[str]) -> BankTxn | None:
     """The refund for a claim: an unclaimed deposit made since it was submitted, either naming the
-    claim (or its order number) or of exactly the refund amount."""
+    claim (or its order number) or of exactly the refund amount. A deposit tagged "(claim ...)"
+    belongs to that claim only."""
     # One day of slack: the bank may date transactions in local time while we use UTC.
     since = claim.submitted_at.date() - timedelta(days=1) if claim.submitted_at else None
-    recent = [d for d in deposits if d.id and d.id not in used and (since is None or d.date is None or d.date >= since)]
+    recent = []
+    for deposit in deposits:
+        if not deposit.id or deposit.id in used or not (since is None or deposit.date is None or deposit.date >= since):
+            continue
+        tag = _CLAIM_TAG.search(deposit.description)
+        if tag is None:
+            recent.append(deposit)
+        elif tag.group(1) == _claim_ref(claim):
+            if _amount_matches(deposit.amount_cents, claim.refund_cents):  # Nessie drops the cents
+                return deposit
+        # else: tagged for another claim, or for an earlier run of this one
     references = [r.lower() for r in (claim.id, purchase.order_number if purchase else None) if r]
     for deposit in recent:
         # A deposit that names the claim only has to agree on the dollars: Nessie drops the cents.

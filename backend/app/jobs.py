@@ -53,6 +53,11 @@ async def _arq_pool():
     return _pool
 
 
+async def queue_available() -> bool:
+    """True when Redis can be reached, so a worker process can pick jobs up."""
+    return await _arq_pool() is not None
+
+
 async def enqueue(job: str, *args, defer_seconds: float = 0) -> str:
     """Queue `tasks.<job>(ctx, *args)`, optionally after a delay. Returns a job id."""
     if get_store().name != "memory":

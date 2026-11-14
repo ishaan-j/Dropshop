@@ -19,6 +19,10 @@ T = TypeVar("T", bound=BaseModel)
 # A mock is either a ready-made model or a zero-arg factory returning one.
 Mock = BaseModel | Callable[[], BaseModel]
 
+ROUNDS = 2  # how many times the model chain is tried
+ROUND_PAUSE_SECONDS = 0.5  # breather before the second round, so a brief overload can pass
+_REJECTED = {400, 401, 403, 404}  # HTTP codes that mean the request or model name is wrong: retrying can't help
+
 
 class GeminiUnavailable(RuntimeError):
     """Gemini can't be called (mock mode / no key) and the caller gave no mock fallback."""
@@ -58,11 +62,14 @@ async def generate_structured(
     """Call Gemini and parse the response into `schema` (JSON mode + response_schema).
 
     Models are tried in order: GEMINI_MODEL, then each of GEMINI_FALLBACK_MODELS. A model that
-    errors or takes longer than GEMINI_ATTEMPT_TIMEOUT_SECONDS is skipped, and the whole call
-    gives up after GEMINI_TIMEOUT_SECONDS, so one overloaded model can't stall a demo.
+    errors or takes longer than GEMINI_ATTEMPT_TIMEOUT_SECONDS is skipped. If none answered, the
+    chain is tried once more: the failures seen in practice are brief (a 503 "high demand", a
+    request that hangs), and the same model usually answers a second later. A model that rejects
+    the request itself (bad key, unknown model) is not asked again. The whole call gives up after
+    GEMINI_TIMEOUT_SECONDS, so an overloaded service can't stall a demo.
 
     Mock fallback: when MOCK_MODE is on or no API key is set, returns `mock` (a model or a
-    factory) instead of calling the network. If every model fails and `mock` was provided,
+    factory) instead of calling the network. If every attempt fails and `mock` was provided,
     falls back to it; without a mock the last error is raised.
     """
     if _use_mock():
@@ -84,24 +91,30 @@ async def generate_structured(
 
     deadline = time.monotonic() + settings.gemini_timeout_seconds
     last_error: Exception = TimeoutError("no time left to call Gemini")
-    for model in model_chain():
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            resp = await asyncio.wait_for(
-                _client().aio.models.generate_content(model=model, contents=contents, config=config),
-                timeout=min(settings.gemini_attempt_timeout_seconds, remaining),
-            )
-            parsed = getattr(resp, "parsed", None)
-            return parsed if isinstance(parsed, schema) else schema.model_validate_json(resp.text)
-        except Exception as exc:
-            last_error = exc
-            logger.warning("Gemini model %s failed (%s: %s)", model, type(exc).__name__, (str(exc) or "timed out")[:160])
+    chain = model_chain()
+    for round_number in range(ROUNDS):
+        if round_number and chain:
+            await asyncio.sleep(max(0.0, min(ROUND_PAUSE_SECONDS, deadline - time.monotonic())))
+        for model in list(chain):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                resp = await asyncio.wait_for(
+                    _client().aio.models.generate_content(model=model, contents=contents, config=config),
+                    timeout=min(settings.gemini_attempt_timeout_seconds, remaining),
+                )
+                parsed = getattr(resp, "parsed", None)
+                return parsed if isinstance(parsed, schema) else schema.model_validate_json(resp.text)
+            except Exception as exc:
+                last_error = exc
+                logger.warning("Gemini model %s failed (%s: %s)", model, type(exc).__name__, (str(exc) or "timed out")[:160])
+                if getattr(exc, "code", None) in _REJECTED:
+                    chain.remove(model)
 
     if mock is None:
         raise last_error
-    logger.warning("Every Gemini model failed; using MOCK for %s", schema.__name__)
+    logger.warning("Every Gemini attempt failed; using MOCK for %s", schema.__name__)
     return _resolve_mock(mock, schema)
 
 

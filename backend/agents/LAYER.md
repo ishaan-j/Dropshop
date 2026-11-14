@@ -21,8 +21,10 @@ Every model call has an offline fallback, so `MOCK_MODE=true` makes no network c
 Tests: `python -m pytest agents` from `backend/` (offline; the bot tests need `playwright install chromium`).
 
 ## Models and speed
-- Gemini: `GEMINI_MODEL` then each of `GEMINI_FALLBACK_MODELS`, 8 s per model, 20 s overall, then the offline fallback.
-  `gemini-3.5-flash-lite` answers in about 1 s; the full flash models were overloaded when this was built.
+- Gemini: `GEMINI_MODEL` then each of `GEMINI_FALLBACK_MODELS`, 4 s per attempt, the chain tried twice, 20 s overall,
+  then the offline fallback. `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` answer in about 1 s but each failed
+  about one call in four at the event (a 503, or a request that hangs), which is why the chain is tried twice. The
+  full flash models were overloaded: 503s, or 18 s and more per answer.
 - Grok: `XAI_MODEL=grok-4.7` answers in about 2 s. The `grok-4` alias took about 17 s.
 
 ## Status

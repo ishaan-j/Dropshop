@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class Store(Protocol):
     name: str  # "memory" | "db"
+    prices: str  # where price history lives: "memory" | "tiger" ("unchecked" until a db store has looked)
 
     async def list_purchases(self, user_id: str) -> list[Purchase]: ...  # newest first
     async def get_purchase(self, purchase_id: str) -> Purchase | None: ...
@@ -49,6 +50,7 @@ class MemoryStore:
     """Demo state in process memory. Lost on restart; reseeded by `reset()`."""
 
     name = "memory"
+    prices = "memory"
 
     def __init__(self) -> None:
         self._load(mock_data.build_seed(get_settings().demo_user_id))
@@ -130,10 +132,13 @@ class MemoryStore:
 class DbStore:
     """Mongo + Tiger Data through Layer 4's repositories (`data.mongo`, `data.timescale`).
 
-    Uses only the functions Layer 4 already declares. Two things it would like from Layer 4 and
-    works without: `mongo.get_claim(claim_id)` and `mongo.get_policy / save_policy` for the
-    `retailer_policies` collection. Until those exist, claims are found by listing, and retailer
-    policies are cached in this process only.
+    App state is in MongoDB. Prices are in Tiger Data when it answers the first time prices are
+    needed (at startup, when started through `init_store`). If it doesn't (not configured, not
+    reachable, not migrated), price history is held in this process instead, seeded like the
+    demo, until the process restarts. `prices` and GET /health say which one is in use.
+
+    `mongo.get_claim` and `mongo.get_policy / save_policy` are used when they exist. Without them
+    claims are found by listing, and retailer policies are cached in this process only.
     """
 
     name = "db"
@@ -143,6 +148,35 @@ class DbStore:
 
         self._mongo, self._timescale = mongo, timescale
         self._policies: dict[str, RetailerPolicy] = {}
+        self._price_source = None  # data.timescale, or a MemoryStore when Tiger Data isn't available
+
+    @property
+    def prices(self) -> str:
+        if self._price_source is None:
+            return "unchecked"  # only before the first price call of a process not started by init_store
+        return "memory" if isinstance(self._price_source, MemoryStore) else "tiger"
+
+    async def choose_price_source(self):
+        """Decide once where prices live, so one run never splits its history across two places."""
+        if self._price_source is None:
+            try:
+                await self._timescale.ping()
+                self._price_source = self._timescale
+                logger.info("Prices: Tiger Data")
+            except Exception as exc:
+                logger.warning(
+                    "Tiger Data isn't available (%s: %s). Holding price history in this process until restart.",
+                    type(exc).__name__, str(exc)[:200],
+                )
+                self._price_source = MemoryStore()
+        return self._price_source
+
+    async def _prices(self, call: str, *args, **kwargs):
+        return await getattr(await self.choose_price_source(), call)(*args, **kwargs)
+
+    async def close(self) -> None:
+        await self._mongo.close()
+        await self._timescale.close()
 
     async def list_purchases(self, user_id: str) -> list[Purchase]:
         return await self._mongo.list_purchases(user_id)
@@ -174,13 +208,13 @@ class DbStore:
     async def insert_price(
         self, product_id: str, retailer: str, price_cents: int, *, time: datetime | None = None, source: str = "poller"
     ) -> None:
-        await self._timescale.insert_price(product_id, retailer, price_cents, time=time, source=source)
+        await self._prices("insert_price", product_id, retailer, price_cents, time=time, source=source)
 
     async def latest_price(self, product_id: str) -> PricePoint | None:
-        return await self._timescale.latest_price(product_id)
+        return await self._prices("latest_price", product_id)
 
     async def price_history(self, product_id: str, days: int = 30) -> list[PricePoint]:
-        return await self._timescale.price_history(product_id, days)
+        return await self._prices("price_history", product_id, days)
 
     async def get_policy(self, retailer: str) -> RetailerPolicy | None:
         if hasattr(self._mongo, "get_policy"):
@@ -204,6 +238,13 @@ _store: Store | None = None
 
 async def init_store() -> Store:
     """Choose the backend for this process. Called once at API / worker startup."""
+    store = await _choose_store()
+    if isinstance(store, DbStore):
+        await store.choose_price_source()
+    return store
+
+
+async def _choose_store() -> Store:
     global _store
     settings = get_settings()
     choice = settings.data_backend

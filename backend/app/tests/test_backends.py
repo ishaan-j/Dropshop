@@ -32,9 +32,16 @@ def use_env(monkeypatch, **env):
 # --- Store selection and the Layer 4 adapter --------------------------------------------------
 
 
-def test_unimplemented_layer4_falls_back_to_memory_unless_db_is_forced(api, monkeypatch):
+def test_missing_layer4_falls_back_to_memory_unless_db_is_forced(api, monkeypatch):
     from app.main import create_app
+    from data import mongo
     from fastapi.testclient import TestClient
+
+    async def not_written_yet(*args, **kwargs):
+        raise NotImplementedError
+
+    for name in ("list_purchases", "list_claims", "list_events"):
+        monkeypatch.setattr(mongo, name, not_written_yet)
 
     use_env(monkeypatch, MOCK_MODE="false", GEMINI_API_KEY="")
     with TestClient(create_app()) as client:  # auto: Layer 4 raises NotImplementedError → demo data
@@ -44,41 +51,12 @@ def test_unimplemented_layer4_falls_back_to_memory_unless_db_is_forced(api, monk
     use_env(monkeypatch, DATA_BACKEND="db")
     with TestClient(create_app()) as client:  # forced: say what's missing instead of faking it
         assert client.get("/health").json()["store"] == "db"
-        for path in ("/purchases", "/claims", "/activity", "/savings", "/prices/x"):
+        for path in ("/purchases", "/claims", "/activity", "/savings"):
             assert client.get(path).status_code == 501, path
         assert client.post("/demo/reset").status_code == 409
 
 
-def test_db_store_passes_through_to_layer4(monkeypatch):
-    from data import mongo, timescale
-
-    purchases, claims, events, prices = {}, {}, [], []
-
-    async def upsert_purchase(p):
-        purchases[p.id] = p
-        return p
-
-    async def save_claim(c):
-        claims[c.id] = c
-        return c
-
-    async def list_claims(user_id):
-        return list(claims.values())
-
-    async def get_purchase(purchase_id):
-        return purchases.get(purchase_id)
-
-    async def log_event(e):
-        events.append(e)
-
-    async def insert_price(product_id, retailer, price_cents, *, time=None, in_stock=None, source="poller"):
-        prices.append((product_id, price_cents, source))
-
-    for name, fn in [("upsert_purchase", upsert_purchase), ("save_claim", save_claim), ("list_claims", list_claims),
-                     ("get_purchase", get_purchase), ("log_event", log_event)]:
-        monkeypatch.setattr(mongo, name, fn)
-    monkeypatch.setattr(timescale, "insert_price", insert_price)
-
+def test_db_store_keeps_state_in_mongo_and_prices_locally_when_tiger_data_is_unavailable(fake_mongo):
     async def scenario():
         db = store.DbStore()
         purchase = Purchase(id="p9", user_id="demo-user", retailer="Target", product_id="target:x", product_name="X",
@@ -86,15 +64,80 @@ def test_db_store_passes_through_to_layer4(monkeypatch):
         claim = Claim(id="c9", user_id="demo-user", purchase_id="p9", retailer="Target", refund_cents=100, created_at=NOW)
         await db.save_purchase(purchase)
         await db.save_claim(claim)
-        await db.insert_price("target:x", "Target", 900, source="demo")
+        assert [p.product_name for p in await db.list_purchases("demo-user")] == ["X"]
         assert (await db.get_purchase("p9")).product_name == "X"
-        assert (await db.get_claim("c9")).refund_cents == 100  # found by listing: Layer 4 has no get_claim yet
+        assert (await db.get_claim("c9")).refund_cents == 100
         assert await db.get_claim("missing") is None
-        assert prices == [("target:x", 900, "demo")]
-        with pytest.raises(NotImplementedError):
-            await db.list_purchases("demo-user")  # still a Layer 4 stub
+        assert fake_mongo["purchases"].docs[0]["_id"] == "p9" and fake_mongo["claims"].docs[0]["_id"] == "c9"
+
+        await db.save_policy(tasks.RetailerPolicy(retailer="Target", window_days=14))
+        assert (await db.get_policy("target")).window_days == 14  # stored in Mongo, not in this process
+        assert len(fake_mongo["retailer_policies"].docs) == 1
+
+        # Tiger Data can't be reached here, so prices are held in this process instead of failing.
+        assert db.prices == "unchecked"
+        await db.insert_price("target:x", "Target", 900, source="demo")
+        assert db.prices == "memory"
+        assert (await db.latest_price("target:x")).price_cents == 900
+        assert (await db.price_history("bestbuy:6505727"))[-1].price_cents == 34999  # seeded like the demo
 
     asyncio.run(scenario())
+
+
+def test_db_store_sends_prices_to_tiger_data_when_it_answers(fake_mongo, monkeypatch):
+    from data import timescale
+
+    prices = []
+
+    async def ping():
+        return None
+
+    async def insert_price(product_id, retailer, price_cents, *, time=None, in_stock=None, source="poller"):
+        prices.append((product_id, price_cents, source))
+
+    monkeypatch.setattr(timescale, "ping", ping)
+    monkeypatch.setattr(timescale, "insert_price", insert_price)
+
+    async def scenario():
+        db = store.DbStore()
+        await db.insert_price("target:x", "Target", 900, source="demo")
+        assert prices == [("target:x", 900, "demo")] and db.prices == "tiger"
+
+    asyncio.run(scenario())
+
+
+def test_demo_flow_runs_on_the_database_store(fake_mongo, monkeypatch):
+    """Seed Mongo, then price drop → claim → approve → refund → vault, with every write going to Mongo."""
+    from app.main import create_app
+    from data import seed
+    from fastapi.testclient import TestClient
+
+    use_env(monkeypatch, DATA_BACKEND="db")
+    asyncio.run(seed.seed())
+    with TestClient(create_app()) as client:
+        drain = lambda: client.portal.call(jobs.drain)  # noqa: E731
+        health = client.get("/health").json()
+        assert health["store"] == "db" and health["prices"] == "memory"  # Tiger Data isn't reachable in tests
+        assert len(client.get("/purchases").json()) == 6
+        assert client.get("/savings").json()["total_recovered_cents"] == 8250
+        assert client.get("/activity?limit=1").json()[0]["kind"] == "claim_drafted"
+
+        drop = client.post("/demo/price-drop").json()
+        assert drop["purchase_id"] == "p2"
+        drain()
+        assert client.get("/health").json()["jobs"] == "inline"  # no Redis here, so the API ran the job itself
+        claim = client.get("/claims").json()[0]
+        assert claim["purchase_id"] == "p2" and claim["status"] == "awaiting_approval"
+
+        assert client.post(f"/claims/{claim['id']}/approve").json()["status"] == "submitting"
+        drain()
+        claim = next(c for c in client.get("/claims").json() if c["id"] == claim["id"])
+        assert claim["status"] == "refund_received" and claim["solana_tx_signature"]
+        assert client.get("/savings").json()["total_recovered_cents"] == 8250 + claim["refund_cents"]
+
+    stored = asyncio.run(fake_mongo["claims"].find_one({"_id": claim["id"]}))
+    assert stored["status"] == "refund_received" and stored["nessie_deposit_id"]
+    assert asyncio.run(fake_mongo["purchases"].find_one({"_id": "p2"}))["status"] == "claimed"
 
 
 # --- Job queue ----------------------------------------------------------------------------------
@@ -271,13 +314,22 @@ def test_refund_matching_rules():
     # Nessie keeps whole dollars: a $37.50 refund comes back as $37. It still matches when the
     # deposit names the claim, but not on the amount alone, and not for a claim with a longer id.
     odd = claim.model_copy(update={"refund_cents": 3750})
-    named = BankTxn("d5", 3700, "PRICE ADJUSTMENT Best Buy BBY01-80612 (claim c1)", today)
+    named = BankTxn("d5", 3700, f"PRICE ADJUSTMENT Best Buy BBY01-80612 (claim {tasks._claim_ref(odd)})", today)
     unnamed = BankTxn("d6", 3700, "DEPOSIT", today)
     assert match(odd, purchase, [unnamed, named], set()) == named
     assert match(odd, purchase, [unnamed], set()) is None
     other = odd.model_copy(update={"id": "c12"})
     no_order = purchase.model_copy(update={"order_number": None})
     assert match(other, no_order, [named], set()) is None  # "c1" in the text is not claim c12
+
+    # The demo is reset and run again on the same day: same claim id, order number and amount. A
+    # refund tagged for the earlier run, or for another claim, must not settle this one.
+    earlier_run = claim.model_copy(update={"submitted_at": NOW - timedelta(minutes=10)})
+    leftover = BankTxn("d7", 5000, f"PRICE ADJUSTMENT Best Buy BBY01-80612 (claim {tasks._claim_ref(earlier_run)})", today)
+    someone_elses = BankTxn("d8", 5000, "PRICE ADJUSTMENT Best Buy BBY01-80612 (claim c-f664e16c)", today)
+    mine = BankTxn("d9", 5000, f"PRICE ADJUSTMENT Best Buy BBY01-80612 (claim {tasks._claim_ref(claim)})", today)
+    assert match(claim, purchase, [leftover, someone_elses], set()) is None
+    assert match(claim, purchase, [leftover, plain, someone_elses, mine], set()) == mine  # its own tag beats an untagged deposit
 
 
 def test_card_charge_confirms_a_purchase_despite_dropped_cents():
@@ -311,9 +363,9 @@ def test_vault_failure_is_retried_on_the_next_run(monkeypatch):
 
     async def scenario():
         memory = _fresh_memory_store()
-        claim = await memory.get_claim("c1")
-        await memory.save_claim(claim.model_copy(update={"status": "submitted", "submitted_at": NOW}))
-        await finance_gateway.issue_refund(5000, "PRICE ADJUSTMENT Best Buy (claim c1)")
+        claim = (await memory.get_claim("c1")).model_copy(update={"status": "submitted", "submitted_at": NOW})
+        await memory.save_claim(claim)
+        await finance_gateway.issue_refund(5000, f"PRICE ADJUSTMENT Best Buy (claim {tasks._claim_ref(claim)})")
 
         assert await tasks.reconcile_refunds({}) == 1
         claim = await memory.get_claim("c1")

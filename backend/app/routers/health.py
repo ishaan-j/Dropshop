@@ -15,6 +15,7 @@ async def health() -> dict:
         "status": "ok",
         "mock_mode": settings.mock_mode,
         "store": get_store().name,  # memory | db
+        "prices": get_store().prices,  # memory | tiger
         "jobs": jobs.mode(),  # inline | arq
         **finance_gateway.modes(),  # bank: simulated | nessie, vault: simulated | solana
         "gemini": "live" if settings.gemini_api_key and not settings.mock_mode else "mock",

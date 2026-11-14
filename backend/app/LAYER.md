@@ -38,11 +38,13 @@ Tests: `python -m pytest app` from `backend/` (offline; the claim-submission tes
 
 ### Which backend is used
 `GET /health` reports all of this.
-- **State.** `DATA_BACKEND=auto` (default): in-memory while `MOCK_MODE=true`, and also while Layer 4's
-  functions still raise `NotImplementedError`. Once Layer 4 lands, `MOCK_MODE=false` uses the database. `db` forces it.
+- **State.** `DATA_BACKEND=auto` (default): in-memory while `MOCK_MODE=true`, otherwise MongoDB (see
+  `backend/data/LAYER.md` for the Atlas setup). `db` and `memory` force one. If the database drivers aren't
+  installed it falls back to in-memory. With the database store, prices go to Tiger Data if it answers
+  at startup; otherwise price history is held in this process until restart (`prices: tiger | memory`).
 - **Jobs.** With in-memory state the API runs every job itself (a separate worker couldn't see the data), so
   no Redis or worker is needed. With the database, jobs go to Redis and `arq app.workers.worker.WorkerSettings`
-  runs them; if Redis is unreachable the API runs them itself.
+  runs them; if Redis is unreachable the API runs them itself, including the periodic ones.
 - **Bank and vault.** Simulated while `MOCK_MODE=true`, otherwise Nessie and Solana devnet. In live mode the
   simulation still covers failures: a refund Nessie won't take is paid by the simulated bank (`nessie+simulated`),
   and after 3 failed vault writes the records are simulated for 5 minutes (`solana+simulated`), with the reason

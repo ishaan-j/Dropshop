@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # Layer 3
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"  # ~1 s per call; the full flash models were overloaded
-    gemini_fallback_models: str = "gemini-3.1-flash-lite,gemini-3.6-flash"  # tried in order if a model fails
-    gemini_attempt_timeout_seconds: float = 8.0  # per model
+    # Tried in order if a model fails, and the whole chain is tried twice. Only the flash-lite models
+    # answered reliably at the event: the full flash models returned 503s or took 18 s and more.
+    gemini_fallback_models: str = "gemini-3.1-flash-lite"
+    gemini_attempt_timeout_seconds: float = 4.0  # per attempt; a healthy answer takes about 1 s
     gemini_timeout_seconds: float = 20.0  # whole call; then fall back to the mock so a live demo never hangs
     sentient_os_enabled: bool = False
     sentient_knowledge_dir: str = "~/Sentient OS - Knowledge Base"  # where Sentient OS writes its Markdown notes
