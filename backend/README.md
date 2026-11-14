@@ -17,5 +17,10 @@ python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\a
 pip install -r requirements.txt
 playwright install chromium
 uvicorn app.main:app --reload                         # http://localhost:8000/docs
-arq app.workers.worker.WorkerSettings                 # background jobs (needs Redis)
+arq app.workers.worker.WorkerSettings                 # background jobs (needs Redis; only used once state is in the database)
+python -m pytest                                      # tests for app/ and agents/ (offline)
 ```
+
+Until Layer 4 is implemented the API keeps demo state in memory and runs the background jobs itself, so
+`uvicorn` alone is enough: no Redis, worker or database. `GET /health` shows which backends are in use.
+See [app/LAYER.md](app/LAYER.md) for the demo controls (`/demo/reset`, `/demo/price-drop`).

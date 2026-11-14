@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from agents import grok_bot
 from agents.gemini_client import generate_structured
 from app.models import EligibilityResult, Purchase
 
@@ -54,10 +55,26 @@ async def explain(purchase: Purchase, result: EligibilityResult) -> str:
     return (await generate_structured(prompt, _Text, mock=_Text(text=fallback))).text.strip()
 
 
+def _draft_is_faithful(text: str, purchase: Purchase, result: EligibilityResult) -> bool:
+    """A claim draft must state the amounts (and order number) exactly as we have them."""
+    new_price = purchase.price_paid_cents - result.refund_cents
+    required = [_money(result.refund_cents), _money(purchase.price_paid_cents), _money(new_price)]
+    if purchase.order_number:
+        required.append(purchase.order_number)
+    return 40 <= len(text) <= 1200 and all(fact in text for fact in required)
+
+
 async def form_message(purchase: Purchase, result: EligibilityResult) -> str:
-    """The message the bot pastes into the retailer's claim/chat form."""
+    """The message the bot pastes into the retailer's claim/chat form.
+
+    Written by Grok (the claim agent) when it's available and its draft states the facts exactly;
+    otherwise by Gemini; otherwise from a template.
+    """
     _require_eligible(result)
     new_price = purchase.price_paid_cents - result.refund_cents
+    draft = await grok_bot.write_claim_message(_facts(purchase, result))
+    if draft and _draft_is_faithful(draft, purchase, result):
+        return draft
     fallback = (
         f"Hello, I'd like to request a price adjustment on order "
         f"{purchase.order_number or '(order number on file)'}. I purchased {purchase.product_name} "

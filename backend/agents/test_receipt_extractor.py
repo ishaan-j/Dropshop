@@ -12,6 +12,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # fixture -> (retailer, order_number, [(product, cents)])
 EXPECTED = {
     "bestbuy_receipt.txt": ("Best Buy", "BBY01-80612", [("Sony WH-1000XM6", 39999)]),
+    "bestbuy_airpods_receipt.txt": ("Best Buy", "BBY01-80733", [("Apple AirPods Pro 3", 24999)]),
     "target_receipt.txt": (
         "Target", "912-0045-7731", [("Ninja Air Fryer 6qt", 12999), ("Hefty Trash Bags 40ct", 949)]
     ),

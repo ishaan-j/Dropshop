@@ -1,0 +1,14 @@
+From: Best Buy <BestBuyInfo@emailinfo.bestbuy.com>
+Subject: Thanks for your order! Order #BBY01-80733
+Date: Thu, 12 Nov 2026 16:05:00 +0000
+
+Thanks for shopping at Best Buy.
+Order Number: BBY01-80733
+Order Date: November 12, 2026
+
+Apple AirPods Pro 3 Wireless Earbuds   Qty 1   $249.99
+
+Subtotal   $249.99
+Shipping   $0.00
+Tax   $20.00
+Total   $269.99

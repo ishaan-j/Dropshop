@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Claim, LedgerState, User } from "../types";
+import type { BackendStatus, Claim, LedgerState, User } from "../types";
 import { applyDemoStage, resetDemoRun, type DemoStage } from "../lib/demo-reducer";
 import { createSeed, defaultSettings, defaultUser, type UserSettings } from "../lib/mock-data";
 import { verifyLedger } from "../lib/verify-ledger";
@@ -18,6 +18,9 @@ interface AppState extends LedgerState {
   onboarded: boolean;
   readNotificationIds: string[];
   epoch: number;
+  /** What the backend reported on GET /health. Null while the app runs on its local demo ledger. */
+  backend: BackendStatus | null;
+  setBackend: (status: BackendStatus | null) => void;
   applyLedger: (ledger: LedgerState) => void;
   applyDemoStage: (stage: DemoStage) => void;
   resetDemoRun: () => void;
@@ -47,6 +50,8 @@ export const useAppStore = create<AppState>()(
       onboarded: false,
       readNotificationIds: [],
       epoch: 0,
+      backend: null,
+      setBackend: (status) => set({ backend: status }),
       applyLedger: (ledger) => set(ledger),
       applyDemoStage: (stage) => set((state) => applyDemoStage(state, stage)),
       resetDemoRun: () => set((state) => resetDemoRun(state)),

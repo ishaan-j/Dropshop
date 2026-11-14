@@ -1,16 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Query
 
-from app import mock_data
 from app.config import get_settings
 from app.models import AgentEvent
+from app.store import get_store
 
 router = APIRouter(prefix="/activity", tags=["activity"])
-settings = get_settings()
 
 
 @router.get("", response_model=list[AgentEvent])
-async def activity_feed(limit: int = 50) -> list[AgentEvent]:
-    if settings.mock_mode:
-        return mock_data.ACTIVITY[:limit]
-    # TODO(L2): return await data.mongo.list_events(settings.demo_user_id, limit)
-    raise HTTPException(501, "Not implemented")
+async def activity_feed(limit: int = Query(50, ge=1, le=200)) -> list[AgentEvent]:
+    """The agent activity feed, newest first."""
+    return await get_store().list_events(get_settings().demo_user_id, limit)

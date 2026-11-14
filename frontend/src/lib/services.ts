@@ -2,16 +2,29 @@
  * The seam between the screens and the data source.
  * Pages call these functions. They do not fetch on their own.
  *
- * In demo mode the Zustand ledger is the database. Reducers in demo-reducer.ts
- * are the writes. In api mode the same functions call src/lib/api.ts.
+ * Demo: the Zustand ledger is the database. Reducers in demo-reducer.ts are the writes.
+ * Live: once the backend has answered GET /health (`isLive()`), the same functions call
+ * src/lib/api.ts and the ledger is a copy of the backend's state, refreshed by polling.
  */
-import type { Claim, PricePoint, ProductArt, Purchase, TrackedPurchase } from "../types";
+import type {
+  Claim,
+  LedgerState,
+  PricePoint,
+  ProductArt,
+  Purchase,
+  RetailerPolicy,
+  TrackedPurchase,
+} from "../types";
 import { api } from "./api";
-import { config } from "./config";
 import { withClaimStatus, withFiledClaim } from "./demo-reducer";
 import { claimForPurchase } from "./metrics";
 import { delay, priceGap } from "./utils";
 import { useAppStore } from "../store/app-store";
+
+/** True once the backend has answered. From then on the screens read and write through it. */
+export function isLive() {
+  return useAppStore.getState().backend !== null;
+}
 
 function artForName(name: string): ProductArt {
   const value = name.toLowerCase();
@@ -30,28 +43,64 @@ function artForName(name: string): ProductArt {
   return "generic";
 }
 
-function enrich(purchase: Purchase, history: PricePoint[], claims: Claim[]): TrackedPurchase {
+function policyText(policy: RetailerPolicy | undefined) {
+  if (!policy || policy.window_days == null) {
+    return "No price-adjustment policy is on file for this retailer, so drops here can't be claimed.";
+  }
+  const conditions = policy.conditions.length ? ` Conditions: ${policy.conditions.join(" ")}` : "";
+  return `${policy.summary}${conditions}`;
+}
+
+function enrich(
+  purchase: Purchase,
+  history: PricePoint[],
+  claims: Claim[],
+  policy: RetailerPolicy | undefined,
+): TrackedPurchase {
   const claim = claimForPurchase(claims, purchase.id);
   const gap = priceGap(purchase.price_paid_cents, purchase.current_price_cents);
   const blocked = claim?.status === "rejected" || claim?.status === "failed" || purchase.status === "expired";
   return {
     ...purchase,
     art: artForName(purchase.product_name),
-    policy_summary: "Gemini's policy summary will appear here once the eligibility worker is connected.",
-    policy_window_days: null,
-    eligibility_explanation: claim?.explanation || "Eligibility has not been explained for this purchase yet.",
+    policy_summary: policyText(policy),
+    policy_window_days: policy?.window_days ?? null,
+    eligibility_explanation: claim?.explanation || "No claim has been drafted for this purchase yet.",
     price_history: history,
     qualifies: gap > 0 && !blocked,
   };
 }
 
+// Retailer policies change rarely (the nightly Grok watch), so they are re-read every few polls.
+const policyCache = new Map<string, RetailerPolicy>();
+const POLICY_REFRESH_EVERY = 8;
+let hydrations = 0;
+
+async function policiesFor(retailers: string[]) {
+  const refresh = hydrations % POLICY_REFRESH_EVERY === 0;
+  await Promise.all(
+    retailers
+      .filter((retailer) => refresh || !policyCache.has(retailer))
+      .map(async (retailer) => {
+        try {
+          policyCache.set(retailer, await api.policy(retailer));
+        } catch {
+          // Keep whatever we had; the purchase page says when no policy is on file.
+        }
+      }),
+  );
+  hydrations += 1;
+}
+
 export async function hydrateFromBackend() {
-  const [purchases, claims, activity, savings] = await Promise.all([
+  const [status, purchases, claims, activity, savings] = await Promise.all([
+    api.health(),
     api.purchases(),
     api.claims(),
     api.activity(50),
     api.savings(),
   ]);
+  await policiesFor([...new Set(purchases.map((purchase) => purchase.retailer))]);
   const tracked = await Promise.all(
     purchases.map(async (purchase) => {
       let history: PricePoint[] = [];
@@ -60,7 +109,7 @@ export async function hydrateFromBackend() {
       } catch {
         history = [];
       }
-      return enrich(purchase, history, claims);
+      return enrich(purchase, history, claims, policyCache.get(purchase.retailer));
     }),
   );
   const vaultTransactions = claims
@@ -88,21 +137,49 @@ export async function hydrateFromBackend() {
       account_mask: "4821",
     }));
 
-  useAppStore.getState().applyLedger({
-    purchases: tracked,
-    claims,
-    activity,
-    vaultTransactions,
-    bankTransactions,
-  });
-  if (savings.vault_address) {
+  const next: LedgerState = { purchases: tracked, claims, activity, vaultTransactions, bankTransactions };
+  const state = useAppStore.getState();
+  const current: LedgerState = {
+    purchases: state.purchases,
+    claims: state.claims,
+    activity: state.activity,
+    vaultTransactions: state.vaultTransactions,
+    bankTransactions: state.bankTransactions,
+  };
+  // Polled every few seconds: skip the writes when nothing changed so charts don't re-render.
+  if (JSON.stringify(next) !== JSON.stringify(current)) state.applyLedger(next);
+  if (JSON.stringify(status) !== JSON.stringify(state.backend)) state.setBackend(status);
+  if (savings.vault_address && savings.vault_address !== state.user.wallet_address) {
     useAppStore.getState().patchUser({ wallet_address: savings.vault_address });
   }
 }
 
+/**
+ * Keep the screens in step with the backend. Its jobs run in the background (receipt scans,
+ * price drops, the claim bot, refunds, vault records), so the app polls instead of waiting for
+ * a reload. Until the backend first answers, each tick is just a connection attempt, which is
+ * how `auto` mode picks up a backend that was started after the page. Returns a stop function.
+ */
+export function startBackendSync(intervalMs = 4000) {
+  let busy = false;
+  const tick = async () => {
+    if (busy || document.hidden) return;
+    busy = true;
+    try {
+      await hydrateFromBackend();
+    } catch {
+      // Backend unreachable: keep showing the last good state and try again next tick.
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = window.setInterval(tick, intervalMs);
+  return () => window.clearInterval(timer);
+}
+
 export async function fileClaim(purchaseId: string) {
   const before = useAppStore.getState();
-  if (config.dataMode === "api") {
+  if (isLive()) {
     const claim = claimForPurchase(before.claims, purchaseId);
     if (!claim) {
       throw new Error("The backend drafts claims after a price drop. There is no claim to approve for this purchase yet.");
@@ -120,7 +197,7 @@ export async function fileClaim(purchaseId: string) {
 
 export async function approveClaim(claimId: string) {
   const epoch = useAppStore.getState().epoch;
-  if (config.dataMode === "api") {
+  if (isLive()) {
     const updated = await api.approveClaim(claimId);
     useAppStore.getState().upsertClaim(updated);
     return;
@@ -133,7 +210,7 @@ export async function approveClaim(claimId: string) {
 
 export async function rejectClaim(claimId: string) {
   const epoch = useAppStore.getState().epoch;
-  if (config.dataMode === "api") {
+  if (isLive()) {
     const updated = await api.rejectClaim(claimId);
     useAppStore.getState().upsertClaim(updated);
     return;
@@ -146,10 +223,8 @@ export async function rejectClaim(claimId: string) {
 export async function checkEligibility(purchaseId: string) {
   const purchase = useAppStore.getState().purchases.find((item) => item.id === purchaseId);
   if (!purchase) throw new Error("Purchase not found");
-  if (config.dataMode === "api") {
-    // Gemini runs in the backend worker. This returns the latest local explanation
-    // until a public eligibility route exists.
-  }
+  // Live: Gemini runs in the backend's evaluate_purchase job, and its verdict arrives as the
+  // drafted claim's explanation. This returns that latest explanation.
   await delay(400);
   const gap = priceGap(purchase.price_paid_cents, purchase.current_price_cents);
   return {
@@ -159,6 +234,30 @@ export async function checkEligibility(purchaseId: string) {
     reason: purchase.eligibility_explanation,
     policy_excerpt: purchase.policy_summary,
     confidence: purchase.qualifies ? 0.86 : 0.74,
-    simulated: config.dataMode === "demo",
+    simulated: !isLive(),
   };
 }
+
+// --- Backend controls (live only). Each starts a background job; the poll shows its results. ---
+
+/** Look for new purchases in receipts. */
+export async function scanForPurchases() {
+  await api.scan();
+}
+
+/** Demo: drop a monitored product's price now, so the agents have something to catch. */
+export async function triggerPriceDrop() {
+  return api.demoPriceDrop();
+}
+
+/** Run the nightly Grok policy watch now. */
+export async function runPolicyWatch() {
+  return (await api.runJob("watch_policies")).result;
+}
+
+/** Reseed the backend's demo state and reload it. */
+export async function resetBackendDemo() {
+  await api.demoReset();
+  await hydrateFromBackend();
+}
+

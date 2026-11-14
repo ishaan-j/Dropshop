@@ -1,7 +1,12 @@
-"""Grok Bot: the nightly policy-watch routine (SpaceXSI "Make it Legendary" requirement).
+"""Grok Bot (SpaceXSI "Make it Legendary" requirement). Two jobs, both through xAI's chat API:
 
-Job: retailers quietly change their price-adjustment policies (shorter windows, new exclusions), and
-Dropshot's eligibility checks depend on them. Each night L2 calls `watch_policy` per retailer:
+1. Claim agent: `write_claim_message` drafts the message the Playwright bot submits on the
+   retailer's price-adjustment form. `claim_writer.form_message` checks the draft against the
+   claim's facts and falls back to Gemini, then a template, if Grok is off or gets a fact wrong.
+
+2. Policy watch: retailers quietly change their price-adjustment policies (shorter windows, new
+   exclusions), and Dropshot's eligibility checks depend on them. Each night L2 calls
+   `watch_policy` per retailer:
   1. fetch the retailer's policy page,
   2. Grok reviews it against the policy we have stored and reports what changed (and whether that
      could cost users refunds),
@@ -52,6 +57,50 @@ _SYSTEM = (
     "`changed` is true only if the window length or a requirement/exclusion materially differs. "
     "Ignore wording, layout and marketing changes. Never guess beyond the page text."
 )
+
+
+def enabled() -> bool:
+    settings = get_settings()
+    return bool(settings.xai_api_key) and not settings.mock_mode
+
+
+_CLAIM_SYSTEM = (
+    "You are Dropshot's claim agent. Write the message a customer sends through a retailer's "
+    "price-adjustment form. 3-4 polite, concise sentences in the first person. Include the order "
+    "number, the product, the purchase date, the price paid, the current price and the exact "
+    "refund amount requested, and cite the policy basis. Use only the facts given; never invent "
+    "details. Plain text only: no markdown, no subject line, no placeholders."
+)
+
+
+async def write_claim_message(facts: str, *, client: httpx.AsyncClient | None = None) -> str | None:
+    """Grok drafts the claim-form message from the claim's facts. Returns None when Grok is off or
+    the call fails, so the caller can fall back. The caller verifies the facts in the draft."""
+    if not enabled():
+        return None
+    settings = get_settings()
+    own_client = client is None
+    client = client or httpx.AsyncClient()
+    try:
+        response = await client.post(
+            f"{settings.xai_base_url.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {settings.xai_api_key}"},
+            json={
+                "model": settings.xai_model,
+                "temperature": 0.2,
+                "messages": [{"role": "system", "content": _CLAIM_SYSTEM}, {"role": "user", "content": facts}],
+            },
+            timeout=12,
+        )
+        response.raise_for_status()
+        text = (response.json()["choices"][0]["message"]["content"] or "").strip()
+        return text or None
+    except Exception as exc:
+        logger.warning("Grok claim draft failed (%s); falling back", type(exc).__name__)
+        return None
+    finally:
+        if own_client:
+            await client.aclose()
 
 
 async def _grok_review(

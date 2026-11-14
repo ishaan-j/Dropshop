@@ -1,8 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { LayoutGrid, List, ScanLine, Search } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { useBackend } from "@/lib/live";
+import { scanForPurchases } from "@/lib/services";
 import { PurchaseCard } from "@/components/purchase-card";
 import { claimForPurchase, displayStatus, type DisplayStatus } from "@/lib/metrics";
 import { daysUntil, priceGap } from "@/lib/utils";
@@ -18,6 +22,20 @@ export function TrackerView() {
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("all");
   const [sort, setSort] = useState("savings");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
+  const [scanning, setScanning] = useState(false);
+  const backend = useBackend();
+
+  async function scan() {
+    setScanning(true);
+    try {
+      await scanForPurchases();
+      toast.success("Scanning receipts. New purchases appear here in a few seconds.");
+    } catch {
+      toast.error("Couldn't start the scan. Is the backend running?");
+    } finally {
+      setScanning(false);
+    }
+  }
   const retailers = useMemo(() => [...new Set(purchases.map((item) => item.retailer))].sort(), [purchases]);
 
   const visible = purchases
@@ -44,7 +62,15 @@ export function TrackerView() {
       <PageHeader
         eyebrow="Price tracker"
         title="Every purchase being watched"
-        description="Search, filter, and open a purchase to see its price history, the simulated policy, and whether a claim can be filed."
+        description={`Search, filter, and open a purchase to see its price history, the ${backend ? "retailer's" : "simulated"} policy, and whether a claim can be filed.`}
+        action={
+          backend ? (
+            <Button variant="outline" onClick={scan} disabled={scanning}>
+              <ScanLine className="mr-2 h-4 w-4" />
+              {scanning ? "Starting…" : "Scan for receipts"}
+            </Button>
+          ) : undefined
+        }
       />
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
         <label className="relative min-w-0 flex-1">

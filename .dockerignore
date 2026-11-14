@@ -1,0 +1,15 @@
+# Keep secrets and local build output out of images.
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/*-keypair.json
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+backend/artifacts
+solana/**/target
+docs

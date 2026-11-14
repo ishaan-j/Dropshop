@@ -82,6 +82,28 @@ export interface SavingsSummary {
   vault_balance_cents: number;
 }
 
+export interface RetailerPolicy {
+  retailer: string;
+  policy_url: string | null;
+  window_days: number | null;
+  conditions: string[];
+  summary: string;
+}
+
+/** GET /health: which backends the API is using right now. */
+export interface BackendStatus {
+  status: string;
+  mock_mode: boolean;
+  store: "memory" | "db";
+  jobs: "inline" | "arq";
+  /** simulated | nessie | nessie+simulated */
+  bank: string;
+  /** simulated | solana | solana+simulated */
+  vault: string;
+  gemini: "live" | "mock";
+  grok: "live" | "off";
+}
+
 // --- Frontend models. The block above mirrors backend/app/models.py. ---
 
 export type AgentActivity = AgentEvent;

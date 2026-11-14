@@ -1,16 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Query
 
-from app import mock_data
-from app.config import get_settings
 from app.models import PricePoint
+from app.store import get_store
 
 router = APIRouter(prefix="/prices", tags=["prices"])
-settings = get_settings()
 
 
 @router.get("/{product_id}", response_model=list[PricePoint])
-async def price_history(product_id: str, days: int = 30) -> list[PricePoint]:
-    if settings.mock_mode:
-        return mock_data.price_history(product_id, days)
-    # TODO(L2): return await data.timescale.price_history(product_id, days)
-    raise HTTPException(501, "Not implemented")
+async def price_history(product_id: str, days: int = Query(30, ge=1, le=365)) -> list[PricePoint]:
+    """Daily price history for the chart, oldest first."""
+    return await get_store().price_history(product_id, days)

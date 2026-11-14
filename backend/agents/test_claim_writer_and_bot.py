@@ -1,6 +1,7 @@
 """Run: cd backend && python -m pytest agents/test_claim_writer_and_bot.py (offline; bot test needs `playwright install chromium`)."""
 
 import asyncio
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,3 +56,49 @@ def test_bot_failure_keeps_screenshots(tmp_path):
     with pytest.raises(claim_bot.ClaimSubmissionError) as ei:
         asyncio.run(claim_bot.submit(claim, purchase, "x", claim_url=bad.as_uri(), screenshot_dir=tmp_path / "s"))
     assert ei.value.screenshots
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only event loop limitation")
+def test_bot_works_from_a_loop_that_cannot_spawn_processes(tmp_path):
+    """`uvicorn --reload` on Windows uses a Selector loop, which can't start the browser itself."""
+    loop = asyncio.SelectorEventLoop()
+    try:
+        shots = loop.run_until_complete(
+            claim_bot.submit(claim, purchase, "please refund", claim_url=FORM.as_uri(), screenshot_dir=tmp_path)
+        )
+    finally:
+        loop.close()
+    assert len(shots) == 3
+
+
+def test_grok_draft_is_used_only_when_it_states_the_facts(monkeypatch):
+    from agents import grok_bot
+
+    good = (
+        "Hello, I bought the Sony WH-1000XM6 Headphones on order BBY01-80612 for $399.99 and it is now $349.99. "
+        "Please refund the $50.00 difference under your price-adjustment policy. Thank you."
+    )
+
+    async def faithful(facts, **kwargs):
+        assert "BBY01-80612" in facts and "$50.00" in facts  # Grok is given the claim's facts
+        return good
+
+    async def wrong_amount(facts, **kwargs):
+        return good.replace("$50.00", "$500.00")
+
+    async def off(facts, **kwargs):
+        return None
+
+    monkeypatch.setattr(grok_bot, "write_claim_message", faithful)
+    assert asyncio.run(claim_writer.form_message(purchase, result)) == good
+
+    for draft in (wrong_amount, off):  # a wrong fact or no Grok: the offline template takes over
+        monkeypatch.setattr(grok_bot, "write_claim_message", draft)
+        message = asyncio.run(claim_writer.form_message(purchase, result))
+        assert message != good and "$50.00" in message and "$500.00" not in message
+
+
+def test_grok_is_not_called_in_mock_mode():
+    from agents import grok_bot
+
+    assert asyncio.run(grok_bot.write_claim_message("facts")) is None

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Bot, Landmark, LayoutDashboard, LineChart, Receipt, Settings, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { useAppStore } from "@/store/app-store";
+import { useBackend } from "@/lib/live";
 import { cn, initials } from "@/lib/utils";
 
 const NAV = [
@@ -19,6 +20,7 @@ const NAV = [
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const user = useAppStore((state) => state.user);
+  const backend = useBackend();
   return (
     <>
       {open ? (
@@ -40,7 +42,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           </button>
         </div>
         <p className="mx-4 mt-4 rounded-full bg-white/10 px-3 py-1 text-center text-[11px] font-medium tracking-wide text-[#C8F55A]">
-          Demo data
+          {backend ? "Live backend" : "Demo data"}
         </p>
         <nav className="mt-4 flex-1 space-y-1 px-3">
           {NAV.map((item) => {

@@ -1,0 +1,19 @@
+# Backend image: FastAPI API and the arq worker (same image, different command).
+# Build from the repo root:  docker build -f infra/Dockerfile.backend -t dropshot-backend .
+#
+# Chromium is installed for both, on purpose: while state is in memory the API runs the background
+# jobs itself, including the Playwright claim bot, so the API needs a browser too.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PLAYWRIGHT_HEADLESS=true
+
+WORKDIR /srv
+COPY backend/requirements.txt .
+RUN pip install -r requirements.txt \
+ && playwright install --with-deps chromium
+
+COPY backend/ .
+
+EXPOSE 8000
+# One process only: the in-memory store and inline jobs live in it. Don't add --workers.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

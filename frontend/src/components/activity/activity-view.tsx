@@ -126,6 +126,13 @@ export function ActivityView() {
               <div>
                 <p className="text-sm leading-5">{event.message}</p>
                 <p className="mt-1 text-xs text-[#5E6B63]">{formatRelative(event.time)} · {KIND_LABEL[event.kind]}</p>
+                {event.screenshot_url ? (
+                  <a href={event.screenshot_url} target="_blank" rel="noreferrer" className="mt-2 block w-fit">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- served by the backend, not a static asset */}
+                    <img src={event.screenshot_url} alt="Screenshot from the claim bot" className="h-32 rounded-lg border border-[#E4E7DC] object-cover object-top" />
+                    <span className="mt-1 block text-xs text-[#5E6B63]">Claim bot screenshot. Open full size.</span>
+                  </a>
+                ) : null}
               </div>
             </li>
           ))}

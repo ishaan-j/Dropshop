@@ -1,13 +1,17 @@
 """Sentient OS integration: discover purchases from the user's on-device context.
 
-Heads-up: Sentient OS is an on-device Mac app (open source, AGPL-3.0) that reads mail/messages/files
-locally overnight. It is not a hosted API. Before building, confirm with the sponsor what counts as an
-integration (e.g. reading its local Markdown knowledge base, or contributing a Dropshot hook upstream).
+Sentient OS is an on-device Mac app (open source, AGPL-3.0; Apple silicon, macOS 15.4+) that reads
+mail, messages and files locally overnight. It is not a hosted API. Per its README, what it learns
+is "a folder of ordinary Markdown files at `~/Sentient OS - Knowledge Base/`" and "local tools can
+read the Markdown folder directly", which is what this module does (SENTIENT_KNOWLEDGE_DIR).
 
-Always keep the fallback path working: sample receipt emails in fixtures/ (or Gmail) → receipt_extractor.
+Not yet verified on a real Mac: the notes are summaries ("connected notes about your people,
+projects, plans and preferences"), not raw receipts, and the README doesn't describe file names or
+frontmatter. So this picks up any recent note that mentions an order or receipt and lets Gemini
+extract the purchases; the offline parser only understands receipt-shaped text. Still confirm
+with the sponsor that reading the knowledge base counts as the integration.
 
-UNCONFIRMED: the Sentient path below assumes its knowledge base is a folder of Markdown/text files
-(SENTIENT_KNOWLEDGE_DIR). Adjust once the sponsor confirms the real format.
+Always keep the fallback path working: sample receipt emails in fixtures/ → receipt_extractor.
 """
 
 from __future__ import annotations

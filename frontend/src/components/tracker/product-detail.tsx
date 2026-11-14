@@ -5,12 +5,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PriceChart } from "@/components/charts/price-chart";
 import { ProductArt } from "@/components/product-art";
-import { DemoNote, Panel } from "@/components/page-header";
+import { Panel } from "@/components/page-header";
+import { StatusNote } from "@/components/status-note";
 import { StatusBadge } from "@/components/status-badge";
 import { windowCopy } from "@/components/purchase-card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DEMO_POLICY_NOTE } from "@/lib/constants";
+import { useBackend } from "@/lib/live";
 import { claimForPurchase, displayStatus, isVaulted } from "@/lib/metrics";
 import { fileClaim } from "@/lib/services";
 import { dropPercent, formatCents, formatDate, priceGap } from "@/lib/utils";
@@ -28,6 +30,7 @@ export function ProductDetailView({ id }: { id: string }) {
   const claim = useAppStore((state) => claimForPurchase(state.claims, id));
   const vaulted = useAppStore((state) => (claim ? isVaulted(claim, state.vaultTransactions) : false));
   const minRefund = useAppStore((state) => state.settings.minRefundCents);
+  const backend = useBackend();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
 
@@ -120,7 +123,12 @@ export function ProductDetailView({ id }: { id: string }) {
         </Panel>
         <Panel>
           <h2 className="font-semibold text-[#12372A]">Policy and eligibility</h2>
-          <div className="mt-3"><DemoNote>{DEMO_POLICY_NOTE}</DemoNote></div>
+          <div className="mt-3">
+            <StatusNote
+              demo={DEMO_POLICY_NOTE}
+              live={() => "This is the policy the backend checks eligibility against. The demo policies are simplified, not verified policy statements."}
+            />
+          </div>
           <p className="mt-4 text-sm leading-6">{purchase.policy_summary}</p>
           <p className="mt-3 text-sm leading-6 text-[#3E4C45]">{purchase.eligibility_explanation}</p>
         </Panel>
@@ -130,7 +138,9 @@ export function ProductDetailView({ id }: { id: string }) {
         <DialogContent>
           <DialogTitle>File this refund claim?</DialogTitle>
           <DialogDescription>
-            Submit a simulated {formatCents(gap)} claim to {purchase.retailer} for {purchase.product_name}. DropShop will not contact the retailer.
+            {backend
+              ? `Approve the ${formatCents(gap)} claim for ${purchase.product_name}. The claim bot files it on DropShop's demo store, not with ${purchase.retailer}.`
+              : `Submit a simulated ${formatCents(gap)} claim to ${purchase.retailer} for ${purchase.product_name}. DropShop will not contact the retailer.`}
           </DialogDescription>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

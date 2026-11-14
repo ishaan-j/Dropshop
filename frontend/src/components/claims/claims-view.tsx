@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Check } from "lucide-react";
-import { DemoNote, PageHeader, Panel } from "@/components/page-header";
+import { PageHeader, Panel } from "@/components/page-header";
+import { StatusNote } from "@/components/status-note";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { CLAIM_TIMELINE } from "@/lib/constants";
+import { useBackend } from "@/lib/live";
 import { claimForPurchase, claimStageLabel, claimTimelineProgress, displayStatus, isVaulted } from "@/lib/metrics";
 import { approveClaim, fileClaim, rejectClaim } from "@/lib/services";
 import { formatCents, formatDate } from "@/lib/utils";
@@ -39,6 +41,8 @@ export function ClaimsView() {
   const purchases = useAppStore((state) => state.purchases);
   const claims = useAppStore((state) => state.claims);
   const vault = useAppStore((state) => state.vaultTransactions);
+  const activity = useAppStore((state) => state.activity);
+  const backend = useBackend();
   const [tab, setTab] = useState<TabId>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -47,6 +51,12 @@ export function ClaimsView() {
   const visible = [...claims].filter((claim) => matches(tab, claim)).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const claim = claims.find((item) => item.id === selected) ?? null;
   const purchase = claim ? purchases.find((item) => item.id === claim.purchase_id) : undefined;
+  // The claim bot's latest screenshot for this claim (live backend only).
+  const screenshot = claim
+    ? activity
+        .filter((event) => event.claim_id === claim.id && event.screenshot_url)
+        .sort((a, b) => b.time.localeCompare(a.time))[0]?.screenshot_url
+    : null;
 
   async function run(id: string, action: "approve" | "reject" | "file") {
     setBusy(id);
@@ -74,7 +84,11 @@ export function ClaimsView() {
       <PageHeader
         eyebrow="Claims"
         title="Refunds in motion"
-        description="Eligible claims wait for your approval. Submitted claims are simulated — nothing is sent to a retailer."
+        description={
+          backend
+            ? "Eligible claims wait for your approval. Once you approve, the claim bot files it on DropShop's demo store and the refund is tracked into your vault."
+            : "Eligible claims wait for your approval. Submitted claims are simulated — nothing is sent to a retailer."
+        }
       />
       {ready.length > 0 ? (
         <Panel className="mb-6">
@@ -173,7 +187,7 @@ export function ClaimsView() {
             <DialogDescription>
               {claim.retailer} · {formatCents(claim.refund_cents)} · {claimStageLabel(claim, isVaulted(claim, vault))}
             </DialogDescription>
-            <div className="mt-4"><DemoNote /></div>
+            <div className="mt-4"><StatusNote /></div>
             <ol className="mt-5 space-y-3">
               {CLAIM_TIMELINE.map((label, index) => {
                 const progress = claimTimelineProgress(claim, isVaulted(claim, vault));
@@ -190,6 +204,13 @@ export function ClaimsView() {
                 );
               })}
             </ol>
+            {screenshot ? (
+              <a href={screenshot} target="_blank" rel="noreferrer" className="mt-4 block">
+                {/* eslint-disable-next-line @next/next/no-img-element -- served by the backend, not a static asset */}
+                <img src={screenshot} alt="The claim form as the bot submitted it" className="max-h-44 w-full rounded-lg border border-[#E4E7DC] object-cover object-top" />
+                <span className="mt-1 block text-xs text-[#5E6B63]">What the claim bot submitted. Open full size.</span>
+              </a>
+            ) : null}
             <p className="mt-4 text-sm leading-6 text-[#3E4C45]">{claim.explanation}</p>
             {claim.status === "awaiting_approval" ? (
               <div className="mt-6 flex gap-2">
@@ -206,7 +227,9 @@ export function ClaimsView() {
         <DialogContent>
           <DialogTitle>File this refund claim?</DialogTitle>
           <DialogDescription>
-            This submits a simulated claim and updates the shared demo data. No retailer is contacted.
+            {backend
+              ? "This approves the drafted claim. The claim bot files it on DropShop's demo store, not a real retailer."
+              : "This submits a simulated claim and updates the shared demo data. No retailer is contacted."}
           </DialogDescription>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmId(null)}>Cancel</Button>

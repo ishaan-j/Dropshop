@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useDemo } from "@/components/demo/demo-provider";
+import { useBackend } from "@/lib/live";
+import { resetBackendDemo } from "@/lib/services";
 import { delay, shorten } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 
@@ -23,6 +25,23 @@ export function SettingsView() {
   const setBankConnected = useAppStore((state) => state.setBankConnected);
   const setWalletConnected = useAppStore((state) => state.setWalletConnected);
   const resetDemo = useAppStore((state) => state.resetDemo);
+  const backend = useBackend();
+
+  async function reset() {
+    demo.halt();
+    setConfirmReset(false);
+    if (!backend) {
+      resetDemo();
+      toast.success("Demo data reset");
+      return;
+    }
+    try {
+      await resetBackendDemo();
+      toast.success("Backend demo reset");
+    } catch {
+      toast.error("The backend couldn't reset. Is it running with DEMO_MODE on?");
+    }
+  }
   const saved = `${user.name}|${user.email}|${settings.minRefundCents}`;
   const [source, setSource] = useState(saved);
   const [form, setForm] = useState({
@@ -115,7 +134,11 @@ export function SettingsView() {
 
       <Panel className="mt-4">
         <h2 className="font-semibold text-[#9B2C2C]">Reset demo</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5E6B63]">Restores the sample account, removes the live-demo purchase, and clears a replay so the $40 cannot be counted twice.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5E6B63]">
+          {backend
+            ? "Reseeds the backend's purchases, claims and activity, and stops any job still running."
+            : "Restores the sample account, removes the live-demo purchase, and clears a replay so the $40 cannot be counted twice."}
+        </p>
         <Button className="mt-4" variant="danger" onClick={() => setConfirmReset(true)}>Reset demo</Button>
       </Panel>
 
@@ -123,11 +146,13 @@ export function SettingsView() {
         <DialogContent>
           <DialogTitle>Reset the demo data?</DialogTitle>
           <DialogDescription>
-            This restores the sample purchases and clears any Nike demo refund. Your place in the app stays open.
+            {backend
+              ? "This reseeds the backend's demo state. Claims you approved in this run are cleared."
+              : "This restores the sample purchases and clears any Nike demo refund. Your place in the app stays open."}
           </DialogDescription>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmReset(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => { demo.halt(); resetDemo(); setConfirmReset(false); toast.success("Demo data reset"); }}>Reset</Button>
+            <Button variant="danger" onClick={reset}>Reset</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -8,30 +8,41 @@
  *   GET  /api/purchases            → GET /purchases
  *   GET  /api/purchases/:id        → GET /purchases/:id
  *   GET  /api/prices/:id           → GET /prices/:product_id?days=
- *   POST /api/eligibility/check    → no public route. Gemini runs in the worker
- *                                    (`evaluate_purchase`). The demo simulates it.
+ *   POST /api/eligibility/check    → no public route. Gemini runs in the backend job
+ *                                    `evaluate_purchase`; its verdict is the drafted claim.
  *   GET  /api/claims               → GET /claims
  *   POST /api/claims               → POST /claims/:id/approve (the user approval).
- *                                    The worker drafts the claim. There is no create route.
+ *                                    The backend drafts the claim. There is no create route.
  *   GET  /api/activity             → GET /activity?limit=
- *   GET  /api/refunds              → no public route. Nessie reconciliation is server-side.
- *                                    Demo bank rows live in the local ledger.
+ *   GET  /api/refunds              → no public route. Nessie reconciliation is server-side;
+ *                                    a refunded claim carries `nessie_deposit_id`.
  *   GET  /api/vault                → GET /savings
- *   POST /api/vault/deposit        → no public route. The worker records the vault credit
- *                                    after a refund. The demo simulates the deposit.
+ *   POST /api/vault/deposit        → no public route. The backend records the vault credit
+ *                                    after a refund; the claim carries `solana_tx_signature`.
  *
  * Where the real systems connect, behind the backend rather than this file:
  *   Sentient OS  — receipt discovery, POST /purchases/scan
  *   Tiger Data   — price history, GET /prices/:product_id
- *   Gemini       — eligibility inside the worker
- *   Grok Bot     — claim submission after POST /claims/:id/approve
+ *   Gemini       — eligibility and the claim explanation
+ *   Grok Bot     — writes the claim message the bot submits after POST /claims/:id/approve,
+ *                  and the nightly policy watch (POST /demo/jobs/watch_policies runs it now)
  *   Nessie       — refund verification inside reconcile_refunds
- *   Solana       — vault balance on GET /savings
+ *   Solana       — vault record and balance, GET /savings
  *   MongoDB      — purchases, claims, activity, and the user profile
+ *
+ * GET /health says which of these are live and which are simulated (`BackendStatus`).
  *
  * Do not put API keys, wallet secrets, or bank credentials in this client.
  */
-import type { AgentEvent, Claim, PricePoint, Purchase, SavingsSummary } from "../types";
+import type {
+  AgentEvent,
+  BackendStatus,
+  Claim,
+  PricePoint,
+  Purchase,
+  RetailerPolicy,
+  SavingsSummary,
+} from "../types";
 import { config } from "./config";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -47,7 +58,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ status: string }>("/health"),
+  health: () => request<BackendStatus>("/health"),
   purchases: () => request<Purchase[]>("/purchases"),
   purchase: (id: string) => request<Purchase>(`/purchases/${id}`),
   scan: () => request<{ job_id: string }>("/purchases/scan", { method: "POST" }),
@@ -58,6 +69,19 @@ export const api = {
   rejectClaim: (id: string) => request<Claim>(`/claims/${id}/reject`, { method: "POST" }),
   activity: (limit = 50) => request<AgentEvent[]>(`/activity?limit=${limit}`),
   savings: () => request<SavingsSummary>("/savings"),
+  policy: (retailer: string) => request<RetailerPolicy>(`/policies/${encodeURIComponent(retailer)}`),
+  // Demo controls. They exist only when the backend runs with DEMO_MODE=true.
+  demoReset: () => request<{ status: string; purchases: number; claims: number }>("/demo/reset", { method: "POST" }),
+  demoPriceDrop: (body: { purchase_id?: string; percent?: number; new_price_cents?: number } = {}) =>
+    request<{ purchase_id: string; product_name: string; old_price_cents: number; new_price_cents: number }>(
+      "/demo/price-drop",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  runJob: (name: "scan_new_purchases" | "poll_prices" | "reconcile_refunds" | "watch_policies") =>
+    request<{ job: string; job_id?: string; result?: { reviewed: number; changed: string[]; notes: string[] } }>(
+      `/demo/jobs/${name}`,
+      { method: "POST" },
+    ),
 };
 
 export { formatCents } from "./utils";

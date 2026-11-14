@@ -5,6 +5,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Bell, Menu as MenuIcon, Play } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { useDemo } from "@/components/demo/demo-provider";
+import { DemoControls } from "@/components/layout/demo-controls";
 import { useAppStore } from "@/store/app-store";
 import { formatRelative, initials } from "@/lib/utils";
 
@@ -74,6 +75,7 @@ export function Topbar({ onMenu, menuOpen }: { onMenu: () => void; menuOpen: boo
       <Link href="/settings" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#12372A] text-xs font-semibold text-[#C8F55A]" aria-label="Account settings">
         {initials(user.name)}
       </Link>
+      <DemoControls />
       <button
         type="button"
         onClick={demo.openDemo}

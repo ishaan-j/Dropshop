@@ -22,7 +22,7 @@ def env(monkeypatch):
 def test_fixture_fallback_discovers_all_purchases():
     ps = asyncio.run(sentient.discover_purchases("2026-01-01T00:00:00Z"))
     assert {p.retailer for p in ps} == {"Best Buy", "Target", "Amazon"}
-    assert len(ps) == 4  # Target receipt has two items
+    assert len(ps) == 5  # four receipts; the Target one has two items
 
 
 def test_sentient_reads_recent_receipt_files(tmp_path, monkeypatch):
@@ -45,4 +45,4 @@ def test_sentient_failure_falls_back(monkeypatch):
     monkeypatch.setenv("SENTIENT_OS_ENABLED", "true")
     monkeypatch.setenv("SENTIENT_KNOWLEDGE_DIR", "/definitely/not/here")
     get_settings.cache_clear()
-    assert len(asyncio.run(sentient.fetch_recent_receipts("2026-01-01T00:00:00Z"))) == 3
+    assert len(asyncio.run(sentient.fetch_recent_receipts("2026-01-01T00:00:00Z"))) == 4  # the fixtures
