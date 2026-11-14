@@ -1,0 +1,10 @@
+# arq workers + Playwright/Chromium. Build from repo root:  docker build -f infra/Dockerfile.worker -t dropshot-worker .
+FROM python:3.12-slim
+
+WORKDIR /srv
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+ && playwright install --with-deps chromium
+COPY backend/ .
+
+CMD ["arq", "app.workers.worker.WorkerSettings"]

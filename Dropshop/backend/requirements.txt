@@ -1,0 +1,21 @@
+# Shared Python project for Layers 2–5. Pin versions once things work.
+
+# Layer 2 — API + workers
+fastapi
+uvicorn[standard]
+pydantic-settings
+arq                 # Redis-backed async job queue + cron
+redis
+httpx
+
+# Layer 3 — AI / agents
+google-genai        # Gemini API SDK
+playwright          # after install: `playwright install chromium`
+
+# Layer 4 — Database
+pymongo             # includes the async client (AsyncMongoClient)
+psycopg[binary,pool]
+
+# Layer 5 — Financial
+solana
+solders

@@ -1,0 +1,28 @@
+# Replace @owner-* with real GitHub usernames once layers are assigned.
+# PRs that touch these paths will auto-request the owner's review.
+
+# Layer 1 — Frontend
+/frontend/                      @owner-frontend
+
+# Layer 2 — Backend (API, workers, scheduling)
+/backend/app/                   @owner-backend
+/backend/requirements.txt       @owner-backend
+
+# Layer 3 — AI & Agentic Intelligence
+/backend/agents/                @owner-agents
+
+# Layer 4 — Database
+/backend/data/                  @owner-database
+/docs/data-model.md             @owner-database
+
+# Layer 5 — Financial Integration
+/backend/finance/               @owner-finance
+/solana/                        @owner-finance
+
+# Layer 6 — Deployment
+/infra/                         @owner-infra
+/docker-compose.yml             @owner-infra
+
+# Shared contracts — everyone reviews
+/backend/app/models.py          @owner-backend @owner-frontend @owner-agents @owner-database
+/docs/api-contract.md           @owner-backend @owner-frontend

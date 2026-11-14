@@ -1,0 +1,26 @@
+# Production stack on Vultr. Run from repo root:
+#   docker compose -f infra/docker-compose.prod.yml up -d --build
+# Databases are managed (Tiger Cloud + MongoDB Atlas). Set their URLs in ../.env
+
+services:
+  api:
+    build: { context: .., dockerfile: infra/Dockerfile.api }
+    env_file: ../.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    ports: ["8000:8000"]
+    depends_on: [redis]
+    restart: unless-stopped
+
+  worker:
+    build: { context: .., dockerfile: infra/Dockerfile.worker }
+    env_file: ../.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on: [redis]
+    shm_size: "1gb"   # Chromium needs shared memory
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
