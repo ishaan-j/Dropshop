@@ -42,7 +42,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           </button>
         </div>
         <p className="mx-4 mt-4 rounded-full bg-white/10 px-3 py-1 text-center text-[11px] font-medium tracking-wide text-[#C8F55A]">
-          {backend ? "Live backend" : "Demo data"}
+          {!backend ? "Demo data" : backend.mock_mode ? "Demo mode" : "Live integrations"}
         </p>
         <nav className="mt-4 flex-1 space-y-1 px-3">
           {NAV.map((item) => {

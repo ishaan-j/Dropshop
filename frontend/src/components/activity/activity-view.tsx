@@ -1,8 +1,9 @@
 "use client";
 
 import { Bot, Check, Landmark, LineChart, Mail, Sparkles, Wallet } from "lucide-react";
-import { PageHeader, Panel } from "@/components/page-header";
+import { DemoNote, PageHeader, Panel } from "@/components/page-header";
 import { useDemo } from "@/components/demo/demo-provider";
+import { useBackend } from "@/lib/live";
 import { PIPELINE } from "@/lib/constants";
 import { claimForPurchase, isVaulted } from "@/lib/metrics";
 import { priceGap, formatRelative, cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ const KIND_LABEL: Record<AgentEventKind, string> = {
 
 export function ActivityView() {
   const demo = useDemo();
+  const backend = useBackend();
   const purchases = useAppStore((state) => state.purchases);
   const claims = useAppStore((state) => state.claims);
   const vault = useAppStore((state) => state.vaultTransactions);
@@ -62,6 +64,19 @@ export function ActivityView() {
         title="Six agents, one refund"
         description="Each agent has one job. During the live demo the active agent is highlighted and the log updates as the $40 moves through the pipeline."
       />
+      {!backend ? (
+        <div className="mb-4">
+          <DemoNote>
+            Sample activity in this browser. Sentient OS, Gemini, Nessie, and Solana did not run these events.
+          </DemoNote>
+        </div>
+      ) : backend.mock_mode ? (
+        <div className="mb-4">
+          <DemoNote>
+            Backend demo mode. The log comes from the API. Gemini, Nessie, Tiger Data, and Solana are still simulated.
+          </DemoNote>
+        </div>
+      ) : null}
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-[#12372A]">Workflow</h2>
