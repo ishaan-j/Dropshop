@@ -18,9 +18,15 @@ class Settings(BaseSettings):
 
     # Layer 3
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_timeout_seconds: float = 20.0  # then fall back to the mock so a live demo never hangs
     sentient_os_enabled: bool = False
+    sentient_knowledge_dir: str = "~/sentient-os/knowledge"  # unconfirmed; see agents/sentient.py
+    xai_api_key: str = ""  # Grok Bot (policy watch)
+    xai_base_url: str = "https://api.x.ai/v1"
+    xai_model: str = "grok-4"  # check the current model name at the event
     playwright_headless: bool = True
+    retailer_claim_url: str = "http://localhost:3000/demo-store/claim"
 
     # Layer 4
     mongodb_uri: str = "mongodb://localhost:27017"

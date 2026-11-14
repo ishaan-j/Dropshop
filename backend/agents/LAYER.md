@@ -24,5 +24,8 @@ Functions take and return models from `app/models.py`. **Don't touch the databas
 - [ ] Sentient OS: confirm with the sponsor what counts as an integration. Note that it's a Mac app, so test on a Mac.
 
 ## Raffle note
-The Make it Legendary raffle requires a **Grok Bot** automation. Consider using Grok Bot for a piece of the
-workflow, such as a routine that checks retailer policy pages or runs the nightly scan, and document it for the submission.
+The Make it Legendary raffle requires a **Grok Bot** automation. `grok_bot.py` is our nightly **policy watch**:
+for each retailer, fetch the policy page, have Grok (xAI API, `XAI_API_KEY`) flag changes against the stored
+policy, and on a change have Gemini re-extract the structured policy. L2 calls `grok_bot.watch_policy(stored)`
+from a nightly arq job and saves `result.policy` to Mongo `retailer_policies` (plus an AgentEvent with `result.note`).
+Document this, and Cursor as the coding agent, in the submission description.

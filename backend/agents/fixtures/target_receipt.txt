@@ -1,0 +1,14 @@
+From: Target <orders@oe1.target.com>
+Subject: Your Target order receipt
+Date: Tue, 11 Nov 2026 09:30:00 +0000
+
+Order #912-0045-7731
+Placed on 11/11/2026
+
+Ninja Air Fryer 6qt   Qty 1   $129.99
+Hefty Trash Bags 40ct   Qty 2   $9.49
+
+Subtotal   $148.97
+Shipping   $0.00
+Estimated tax   $10.43
+Total   $159.40
