@@ -1,8 +1,30 @@
-# Dropshot 🎯
+# DropShop 🎯
 
 > **Your purchases keep getting cheaper. Now so do you.**
 
-Dropshot watches what you've bought, tracks the price afterward, and when the price drops inside the retailer's price-adjustment window, an AI agent works out whether you qualify and files the claim for you (after you approve it). The money it recovers lands in a savings vault on Solana.
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini_AI-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![Solana](https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+
+## An AI-powered price protection and savings platform. 
+
+DropShop watches your purchases, tracks the prices of products, and when the price of a purchased product drops inside the retailer's price-adjustment window, an AI agent works out whether you qualify for a partial refund and files the claim for you (after your approval). The recovered money lands in a Solana savings vault.
+
+## Features
+
+- 🧾 **Purchase Watch:** Automatically identifies purchases through receipt emails and transaction data.
+- 📉 **Price Monitoring:** Tracks product prices and detects price drops after purchases.
+- 🤖 **AI Eligibility Analysis:** Uses Gemini to interpret retailer policies and evaluate potential refunds.
+- ✅ **One-Click Approval:** Users review and approve claims before submission.
+- 🌐 **Automated Claims:** Uses Playwright to assist with retailer price-adjustment submissions.
+- 💰 **Savings Vault:** Tracks recovered savings through a Solana-powered vault.
+- 📊 **Savings Dashboard:** Visualizes purchases, claims, and total money recovered.
 
 ## How it works
 
@@ -20,32 +42,17 @@ flowchart LR
     B --> F[Next.js dashboard]
 ```
 
-1. **Discover**: Sentient OS / receipt emails surface new purchases, and Nessie confirms the card charge.
-2. **Watch**: workers poll the product's price and write every observation to Tiger Data.
-3. **Decide**: on a drop, Gemini reads the retailer's policy and decides whether the purchase is eligible and for how much.
-4. **Approve**: the user sees a drafted claim in the dashboard and taps approve.
-5. **Claim**: the Playwright bot fills in and submits the retailer's price-adjustment form.
-6. **Recover**: the refund deposit shows up in Nessie and gets recorded in the Solana savings vault.
-
 ## Repo layout and owners
 
 | Layer | Folder | Owner | What it covers |
 |---|---|---|---|
-| 1. Frontend | [`frontend/`](frontend/LAYER.md) | _TBD_ | Next.js + TS, Tailwind, shadcn/ui, Recharts: dashboard, purchase cards, activity feed, savings charts |
-| 2. Backend | [`backend/app/`](backend/app/LAYER.md) | _TBD_ | FastAPI endpoints, Redis + arq workers, scheduling, price monitoring, claim lifecycle |
-| 3. AI and agents | [`backend/agents/`](backend/agents/LAYER.md) | _TBD_ | Gemini (receipts, policies, eligibility, explanations), Sentient OS, Playwright claim bot |
-| 4. Database | [`backend/data/`](backend/data/LAYER.md) | _TBD_ | Tiger Data hypertables, MongoDB collections and indexes, seed data |
-| 5. Financial | [`backend/finance/`](backend/finance/LAYER.md) + [`solana/`](solana/LAYER.md) | _TBD_ | Nessie sandbox banking, Solana + Anchor savings vault on devnet |
-| 6. Deployment | [`infra/`](infra/LAYER.md) | _TBD_ | Docker images, Vultr hosting for API, workers and browser automation |
+| 1. Frontend | [`frontend/`](frontend/LAYER.md) | Aashita Singh | Next.js + TS, Tailwind, shadcn/ui, Recharts: dashboard, purchase cards, activity feed, savings charts |
+| 2. Backend | [`backend/app/`](backend/app/LAYER.md) | Ishaan Jagali & Akshit Saraf | FastAPI endpoints, Redis + arq workers, scheduling, price monitoring, claim lifecycle |
+| 3. AI and agents | [`backend/agents/`](backend/agents/LAYER.md) | Ishaan Jagali & Ayushi Biswas | Gemini (receipts, policies, eligibility, explanations), Sentient OS, Playwright claim bot |
+| 4. Database | [`backend/data/`](backend/data/LAYER.md) | Ishaan Jagali | Tiger Data hypertables, MongoDB collections and indexes, seed data |
+| 5. Financial | [`backend/finance/`](backend/finance/LAYER.md) + [`solana/`](solana/LAYER.md) | Akshit Saraf | Nessie sandbox banking, Solana + Anchor savings vault on devnet |
+| 6. Deployment | [`infra/`](infra/LAYER.md) | TBD | Docker images, Vultr hosting for API, workers and browser automation |
 
-Shared contracts, which everyone should read before writing code:
-
-- [`docs/api-contract.md`](docs/api-contract.md): REST endpoints between frontend and backend
-- [`docs/data-model.md`](docs/data-model.md): Mongo collections and Timescale tables
-- [`backend/app/models.py`](backend/app/models.py): Pydantic models (source of truth), mirrored in [`frontend/src/types/index.ts`](frontend/src/types/index.ts)
-- [`docs/architecture.md`](docs/architecture.md): flow, boundaries and the demo script
-
-> Fill in the owners above and in [`.github/CODEOWNERS`](.github/CODEOWNERS) once roles are assigned.
 
 ## Quick start
 
@@ -69,14 +76,7 @@ npm run dev                       # http://localhost:3000
 
 Until real integrations land, the API serves **mock data** (`MOCK_MODE=true`), so the frontend can be built in parallel from minute one.
 
-## Team workflow
+## Built With:
 
-- Branch per layer or feature, for example `frontend/dashboard` or `agents/eligibility`. Open PRs into `main` and don't push to it directly.
-- Change a shared contract (`models.py`, `api-contract.md`, `data-model.md`) **only** in its own small PR, and tell the team in the group chat.
-- Every integration keeps a mock fallback behind `MOCK_MODE` so one broken API never blocks the demo.
-
-## Tooling and sponsor tracks
-
-- **Cursor** is the team's core AI coding agent. Claude Code is also used.
-- **Gemini API**, **MongoDB Atlas**, **Tiger Data**, **Solana**, **Capital One Nessie**, **Sentient OS**, **Vultr**
-- For the *Make it Legendary* raffle, the project description must explain how we use **Cursor** and a **Grok Bot** automation, and we must opt in at submission.
+- **Cursor** is the team's core AI coding agent. **Claude Code** is also used.
+- Gemini API, MongoDB Atlas, Tiger Data, Solana, Capital One Nessie, Sentient OS, Vultr
