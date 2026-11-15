@@ -86,10 +86,13 @@ async def log_event(
 
 
 async def policy_for(retailer: str) -> RetailerPolicy:
-    """The retailer's policy: the stored copy if we have one, otherwise read and store it."""
+    """The retailer's policy: the stored copy if we have one, otherwise read and store it.
+
+    A stored "no known policy" placeholder is replaced when a real policy is now available.
+    """
     store = get_store()
     policy = await store.get_policy(retailer)
-    if policy is None:
+    if policy_reader.is_unset_policy(policy):
         policy = await policy_reader.get_policy(retailer)
         await store.save_policy(policy)
     return policy
@@ -311,6 +314,11 @@ async def _evaluate(purchase_id: str) -> str | None:
         current = latest.price_cents
     try:
         policy = await policy_for(purchase.retailer)
+        if purchase.adjustment_window_ends is None and policy.window_days is not None:
+            purchase = purchase.model_copy(
+                update={"adjustment_window_ends": _utc(purchase.purchased_at) + timedelta(days=policy.window_days)}
+            )
+            await store.save_purchase(purchase)
         result = await eligibility.check(purchase, current, policy)
     except Exception as exc:
         logger.exception("Eligibility check failed for %s", purchase_id)
