@@ -1,26 +1,63 @@
-# Production stack on Vultr. Run from repo root:
-#   docker compose -f infra/docker-compose.prod.yml up -d --build
-# Databases are managed (Tiger Cloud + MongoDB Atlas). Set their URLs in ../.env
+# Production stack on Vultr. Run from the repo root (the --env-file matters: it feeds the ${...} below):
+#
+#   docker compose --env-file .env -f infra/docker-compose.prod.yml up -d --build
+#
+# Needs in .env:  PUBLIC_API_URL and PUBLIC_WEB_URL (how browsers reach this box), plus the usual keys.
+# Databases are managed (Tiger Cloud + MongoDB Atlas): set their URLs in .env once Layer 4 exists.
 
 services:
   api:
-    build: { context: .., dockerfile: infra/Dockerfile.api }
+    build: { context: .., dockerfile: infra/Dockerfile.backend }
+    image: dropshot-backend
     env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
+      API_BASE_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in .env, e.g. http://203.0.113.10:8000}
+      CORS_ORIGINS: ${PUBLIC_WEB_URL:?set PUBLIC_WEB_URL in .env, e.g. http://203.0.113.10:3000}
+      # The claim bot runs inside this network, so it reaches the demo store by service name.
+      RETAILER_CLAIM_URL: http://frontend:3000/demo-store/claim
+      PLAYWRIGHT_HEADLESS: "true"
     ports: ["8000:8000"]
-    depends_on: [redis]
+    volumes:
+      - screenshots:/srv/artifacts/claim_screenshots   # written by whoever runs the bot, served by the API
+      - ../solana:/solana:ro                            # the devnet wallet (solana/dev-keypair.json), if present
+    depends_on: [redis, frontend]
+    shm_size: "1gb"   # Chromium needs shared memory
     restart: unless-stopped
 
+  # Only useful once state is in the database (Layer 4): until then the API runs every job itself.
+  #   docker compose --env-file .env -f infra/docker-compose.prod.yml --profile worker up -d
   worker:
-    build: { context: .., dockerfile: infra/Dockerfile.worker }
+    image: dropshot-backend
+    command: ["arq", "app.workers.worker.WorkerSettings"]
+    profiles: ["worker"]
     env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
-    depends_on: [redis]
-    shm_size: "1gb"   # Chromium needs shared memory
+      API_BASE_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+      RETAILER_CLAIM_URL: http://frontend:3000/demo-store/claim
+      PLAYWRIGHT_HEADLESS: "true"
+    volumes:
+      - screenshots:/srv/artifacts/claim_screenshots
+      - ../solana:/solana:ro
+    depends_on: [redis, api]
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in .env}
+        NEXT_PUBLIC_DATA_MODE: auto
+    image: dropshot-frontend
+    ports: ["3000:3000"]
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+
+volumes:
+  screenshots:

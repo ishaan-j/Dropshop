@@ -31,6 +31,11 @@ FROM price_observations
 GROUP BY day, product_id, retailer
 WITH NO DATA;
 
+-- Real-time aggregation: days the refresh policy hasn't stored yet are computed from the raw rows
+-- when queried. Without it, yesterday is missing from the chart for the first hour or so after
+-- midnight UTC, until the policy below gets to it.
+ALTER MATERIALIZED VIEW price_daily SET (timescaledb.materialized_only = false);
+
 SELECT add_continuous_aggregate_policy('price_daily',
     start_offset      => INTERVAL '60 days',
     end_offset        => INTERVAL '1 hour',

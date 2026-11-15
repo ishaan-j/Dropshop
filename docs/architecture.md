@@ -25,8 +25,12 @@ Rules:
 | `scan_new_purchases` | nightly cron + `POST /purchases/scan` | Sentient OS / email → `agents.receipt_extractor` → match to Nessie transaction → save purchase |
 | `poll_prices` | hourly cron (every minute in demo mode) | Fetch the current price for each `monitoring` purchase → write to Timescale → detect drops |
 | `evaluate_purchase` | enqueued on drop | `agents.policy_reader` + `agents.eligibility` → if eligible, `agents.claim_writer` drafts a claim (`awaiting_approval`) |
-| `submit_claim` | `POST /claims/{id}/approve` | `agents.claim_bot` (Playwright) submits on the retailer site, with screenshots logged to the activity feed |
-| `reconcile_refunds` | every few minutes | Watch Nessie deposits for the refund → mark `refund_received` → record in the Solana vault |
+| `submit_claim` | `POST /claims/{id}/approve` | Grok drafts the claim message, then `agents.claim_bot` (Playwright) submits it on the retailer site, with screenshots logged to the activity feed |
+| `issue_demo_refund` | demo mode, seconds after a claim is submitted | Our demo store has no payments backend, so this job pays the refund as a Nessie deposit |
+| `reconcile_refunds` | every few minutes (seconds in demo mode) | Watch Nessie deposits for the refund → mark `refund_received` → record in the Solana vault |
+| `watch_policies` | nightly | Grok through the xAI API (`agents.grok_bot`) checks retailer policy pages and stores changed policies. A Grok Bot routine can feed it pages through `POST /automations/policy-page` |
+
+Jobs run on the arq worker when state is in the database. With the in-memory demo store, or if Redis is down, the API process runs them itself (`backend/app/jobs.py`), so the demo needs neither Redis nor a worker.
 
 ## Demo script (aim for 3 minutes)
 

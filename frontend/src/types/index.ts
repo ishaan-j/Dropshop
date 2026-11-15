@@ -81,3 +81,113 @@ export interface SavingsSummary {
   vault_address: string | null;
   vault_balance_cents: number;
 }
+
+export interface RetailerPolicy {
+  retailer: string;
+  policy_url: string | null;
+  window_days: number | null;
+  conditions: string[];
+  summary: string;
+}
+
+/** GET /health: which backends the API is using right now. */
+export interface BackendStatus {
+  status: string;
+  mock_mode: boolean;
+  store: "memory" | "db";
+  jobs: "inline" | "arq";
+  /** simulated | nessie | nessie+simulated */
+  bank: string;
+  /** simulated | solana | solana+simulated */
+  vault: string;
+  gemini: "live" | "mock";
+  grok: "live" | "off";
+}
+
+// --- Frontend models. The block above mirrors backend/app/models.py. ---
+
+export type AgentActivity = AgentEvent;
+
+export type ProductArt =
+  | "nike"
+  | "headphones"
+  | "airpods"
+  | "dyson"
+  | "samba"
+  | "leggings"
+  | "kindle"
+  | "fryer"
+  | "jacket"
+  | "espresso"
+  | "runner"
+  | "shirt"
+  | "generic";
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  bank_name: string;
+  bank_mask: string;
+  wallet_address: string;
+}
+
+/** Tiger Data price history for one product. */
+export interface PriceHistory {
+  product_id: string;
+  points: PricePoint[];
+}
+
+/** Gemini eligibility decision. `simulated` is true when the demo produced it. */
+export interface RefundEligibility {
+  purchase_id: string;
+  eligible: boolean;
+  refund_cents: number;
+  reason: string;
+  policy_excerpt: string | null;
+  confidence: number;
+  simulated: boolean;
+}
+
+/** Nessie bank transaction. Amounts are integer cents. */
+export interface BankTransaction {
+  id: string;
+  claim_id: string | null;
+  purchase_id: string | null;
+  posted_at: string;
+  amount_cents: number;
+  description: string;
+  status: "pending" | "posted";
+  account_mask: string;
+}
+
+/** Solana vault deposit. Amounts are integer cents. Signatures in demo mode are simulated. */
+export interface VaultTransaction {
+  id: string;
+  claim_id: string | null;
+  purchase_id: string | null;
+  created_at: string;
+  amount_cents: number;
+  status: "pending" | "confirmed";
+  signature: string;
+  description: string;
+}
+
+/** A purchase plus the fields the UI needs that the API purchase does not carry. */
+export interface TrackedPurchase extends Purchase {
+  art: ProductArt;
+  policy_summary: string;
+  policy_window_days: number | null;
+  eligibility_explanation: string;
+  price_history: PricePoint[];
+  /** True when the price-adjustment policy (demo or Gemini) says the user qualifies. */
+  qualifies: boolean;
+}
+
+export interface LedgerState {
+  purchases: TrackedPurchase[];
+  claims: Claim[];
+  activity: AgentEvent[];
+  vaultTransactions: VaultTransaction[];
+  bankTransactions: BankTransaction[];
+}

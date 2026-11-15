@@ -19,3 +19,7 @@ psycopg[binary,pool]
 # Layer 5 — Financial
 solana
 solders
+
+# Tests: `python -m pytest` from backend/
+pytest
+fakeredis           # in-memory Redis so the arq worker test runs without a server

@@ -1,0 +1,9 @@
+<!doctype html><html><body>
+<h1>Price adjustment request (test stand-in for demo-store)</h1>
+<form onsubmit="event.preventDefault();document.querySelector('[data-testid=claim-confirmation]').hidden=false;document.querySelector('[data-testid=claim-confirmation]').textContent='Reference PA-'+document.querySelector('[data-testid=order-number]').value;">
+<label>Order number <input data-testid="order-number" required></label><input data-testid="product-name">
+<input data-testid="price-paid"><input data-testid="current-price">
+<textarea data-testid="message"></textarea>
+<button data-testid="submit">Submit</button></form>
+<div data-testid="claim-confirmation" hidden></div>
+</body></html>
