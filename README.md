@@ -12,6 +12,14 @@
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 
+<p align="center">
+  <img src="images/dropshop-dashboard.png" alt="DropShop Dashboard" width="100%">
+</p>
+
+<p align="center">
+  <i>Your money-saving assistant has been busy.</i>
+</p>
+
 ## An AI-powered price protection and savings platform. 
 
 DropShop watches your purchases, tracks the prices of products, and when the price of a purchased product drops inside the retailer's price-adjustment window, an AI agent works out whether you qualify for a partial refund and files the claim for you (after your approval). The recovered money lands in a Solana savings vault.
