@@ -30,26 +30,63 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 _RECEIPT_GLOB = "*_receipt.txt"
 _SENTIENT_SUFFIXES = {".md", ".txt", ".eml"}
 _RECEIPT_HINTS = ("order", "receipt", "purchase", "invoice")
+_MAX_RECEIPT_BYTES = 1_000_000
 
 
 def _fixture_receipts() -> list[str]:
     return [p.read_text(encoding="utf-8") for p in sorted(FIXTURES_DIR.glob(_RECEIPT_GLOB))]
 
 
-def _sentient_receipts(since: datetime) -> list[str]:
-    """Receipt-looking files in Sentient OS's local knowledge base modified since `since`."""
-    root = Path(get_settings().sentient_knowledge_dir).expanduser()
+def _extra_watch_dirs() -> list[Path]:
+    dirs = []
+    for part in get_settings().receipt_watch_dirs.split(","):
+        part = part.strip()
+        if part:
+            dirs.append(Path(part).expanduser())
+    return dirs
+
+
+def _receipts_in(root: Path, since: datetime) -> list[str]:
+    """Receipt-looking .md/.txt/.eml files under `root` modified since `since`."""
     if not root.is_dir():
-        raise FileNotFoundError(f"Sentient knowledge dir not found: {root}")
+        return []
     texts = []
     for path in sorted(root.rglob("*")):
         if path.suffix.lower() not in _SENTIENT_SUFFIXES or not path.is_file():
             continue
-        if datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) < since:
+        try:
+            stat = path.stat()
+            if stat.st_size > _MAX_RECEIPT_BYTES:
+                continue
+            modified = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        except OSError:
+            continue
+        if modified < since:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
+        if text.lstrip().startswith("{\\rtf"):  # TextEdit's .md files are RTF, not receipt text
+            continue
         if any(h in text[:2000].lower() for h in _RECEIPT_HINTS):
             texts.append(text)
+    return texts
+
+
+def _sentient_receipts(since: datetime) -> list[str]:
+    """Receipt files in the Sentient OS knowledge base, plus Desktop and Downloads."""
+    root = Path(get_settings().sentient_knowledge_dir).expanduser()
+    if not root.is_dir():
+        raise FileNotFoundError(f"Sentient knowledge dir not found: {root}")
+    texts = _receipts_in(root, since)
+    seen = {root.resolve()}
+    for extra in _extra_watch_dirs():
+        try:
+            key = extra.resolve()
+        except OSError:
+            key = extra
+        if key in seen:
+            continue
+        seen.add(key)
+        texts.extend(_receipts_in(extra, since))
     return texts
 
 

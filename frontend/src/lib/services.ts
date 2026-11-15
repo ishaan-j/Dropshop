@@ -7,6 +7,7 @@
  * src/lib/api.ts and the ledger is a copy of the backend's state, refreshed by polling.
  */
 import type {
+  AgentEvent,
   Claim,
   LedgerState,
   PricePoint,
@@ -51,23 +52,39 @@ function policyText(policy: RetailerPolicy | undefined) {
   return `${policy.summary}${conditions}`;
 }
 
+function latestEligibility(activity: AgentEvent[], purchaseId: string) {
+  return activity
+    .filter((event) => event.purchase_id === purchaseId && event.kind === "eligibility_checked")
+    .sort((a, b) => b.time.localeCompare(a.time))[0];
+}
+
 function enrich(
   purchase: Purchase,
   history: PricePoint[],
   claims: Claim[],
   policy: RetailerPolicy | undefined,
+  activity: AgentEvent[],
 ): TrackedPurchase {
   const claim = claimForPurchase(claims, purchase.id);
   const gap = priceGap(purchase.price_paid_cents, purchase.current_price_cents);
+  const decision = latestEligibility(activity, purchase.id);
+  const notEligible = decision?.message.startsWith("Not eligible") ?? false;
+  const checkedEligible = decision?.message.startsWith("Eligible") ?? false;
   const blocked = claim?.status === "rejected" || claim?.status === "failed" || purchase.status === "expired";
+  const waiting = purchase.status === "drop_detected" && !decision;
   return {
     ...purchase,
     art: artForName(purchase.product_name),
     policy_summary: policyText(policy),
     policy_window_days: policy?.window_days ?? null,
-    eligibility_explanation: claim?.explanation || "No claim has been drafted for this purchase yet.",
+    eligibility_explanation:
+      decision?.message
+      ?? (waiting
+        ? "Checking this price drop against the retailer's policy."
+        : claim?.explanation || "No claim has been drafted for this purchase yet."),
     price_history: history,
-    qualifies: gap > 0 && !blocked,
+    // A lower price is not enough. Eligible means the policy check passed.
+    qualifies: gap > 0 && !blocked && checkedEligible && !notEligible,
   };
 }
 
@@ -97,7 +114,7 @@ export async function hydrateFromBackend() {
     api.health(),
     api.purchases(),
     api.claims(),
-    api.activity(50),
+    api.activity(200),
     api.savings(),
   ]);
   await policiesFor([...new Set(purchases.map((purchase) => purchase.retailer))]);
@@ -109,7 +126,7 @@ export async function hydrateFromBackend() {
       } catch {
         history = [];
       }
-      return enrich(purchase, history, claims, policyCache.get(purchase.retailer));
+      return enrich(purchase, history, claims, policyCache.get(purchase.retailer), activity);
     }),
   );
   const vaultTransactions = claims
@@ -182,7 +199,10 @@ export async function fileClaim(purchaseId: string) {
   if (isLive()) {
     const claim = claimForPurchase(before.claims, purchaseId);
     if (!claim) {
-      throw new Error("The backend drafts claims after a price drop. There is no claim to approve for this purchase yet.");
+      const purchase = before.purchases.find((item) => item.id === purchaseId);
+      const reason = purchase?.eligibility_explanation;
+      if (reason?.startsWith("Not eligible")) throw new Error(reason);
+      throw new Error("This price drop is still being checked. A claim shows up here only after the policy check says it qualifies.");
     }
     const updated = await api.approveClaim(claim.id);
     useAppStore.getState().upsertClaim(updated);

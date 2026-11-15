@@ -54,6 +54,7 @@ export function displayStatus(purchase: TrackedPurchase, claim?: Claim): Display
   if (claim?.status === "submitted") return "submitted";
   if (claim?.status === "submitting") return "processing";
   if (claim?.status === "awaiting_approval") return "pending";
+  if (purchase.eligibility_explanation.startsWith("Not eligible")) return "ineligible";
   const gap = priceGap(purchase.price_paid_cents, purchase.current_price_cents);
   if (gap > 0 && !purchase.qualifies) return "pending";
   if (gap > 0 && purchase.qualifies) return "eligible";

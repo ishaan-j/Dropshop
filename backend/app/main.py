@@ -21,12 +21,17 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     store = await init_store()
     ticker = None
+    scanner = None
     if store.name == "memory":
         finance_gateway.reset_simulation(store.seed)
     # This process runs the periodic jobs when no worker can: in-memory state is invisible to a
     # worker, and without Redis there is no worker to hand them to.
     if settings.scheduler_enabled and (store.name == "memory" or not await jobs.queue_available()):
         ticker = asyncio.create_task(scheduler.run_forever(), name="scheduler")
+    # Receipt files land while the app is open. Scan for them here even when a worker owns the
+    # other jobs, so a new Desktop or Downloads receipt does not wait for the button.
+    if settings.scheduler_enabled and settings.sentient_os_enabled and not settings.mock_mode:
+        scanner = asyncio.create_task(scheduler.run_receipt_scans(), name="receipt-scans")
     logger.info("Dropshot API ready: store=%s jobs=%s mock_mode=%s", store.name, jobs.mode(), settings.mock_mode)
     try:
         yield
@@ -35,6 +40,10 @@ async def lifespan(app: FastAPI):
             ticker.cancel()
             with suppress(asyncio.CancelledError):
                 await ticker
+        if scanner:
+            scanner.cancel()
+            with suppress(asyncio.CancelledError):
+                await scanner
         await jobs.close()
         if hasattr(store, "close"):
             await store.close()  # database connections

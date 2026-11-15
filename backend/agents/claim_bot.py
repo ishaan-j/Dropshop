@@ -16,6 +16,7 @@ Optional: a form that renders `data-ready="false"` until its scripts are attache
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -38,6 +39,22 @@ class ClaimSubmissionError(RuntimeError):
 
 def _dollars(cents: int) -> str:
     return f"{cents / 100:.2f}"
+
+
+def _use_installed_browsers() -> None:
+    """Ignore a Playwright cache that has no Chromium.
+
+    A process started inside Cursor can inherit PLAYWRIGHT_BROWSERS_PATH pointing at a
+    temporary sandbox folder. That folder is wiped, so launch then looks for a browser
+    that is not there. Drop the variable and use the normal cache instead.
+    """
+    cache = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if not cache:
+        return
+    root = Path(cache)
+    if root.is_dir() and any(root.glob("chromium*")):
+        return
+    os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
 
 
 # Server-rendered forms can be clicked before their script is attached; a page may flag that.
@@ -108,6 +125,7 @@ async def _submit(
         shots.append(str(path))
 
     new_price = purchase.price_paid_cents - claim.refund_cents
+    _use_installed_browsers()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(

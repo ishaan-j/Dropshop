@@ -16,6 +16,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import uuid
@@ -45,6 +46,7 @@ SCAN_LOOKBACK_DAYS = 30
 OPEN_CLAIM = {"awaiting_approval", "submitting", "submitted"}
 
 _evaluating: set[str] = set()  # purchases with an evaluation in flight in this process
+_seen_receipts: set[str] = set()  # hashes already sent to extraction in this process
 _vault_failures: dict[str, int] = {}  # claim id -> failed attempts to record it on Solana
 VAULT_ATTEMPTS = 3  # then the record is simulated so the claim can finish
 
@@ -200,11 +202,15 @@ async def scan_new_purchases(ctx: dict, user_id: str | None = None) -> int:
 
     found = 0
     for raw in receipts:
+        digest = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+        if digest in _seen_receipts:
+            continue
         try:
             receipt = await receipt_extractor.extract(raw)
         except Exception:
             logger.exception("Skipping a receipt that failed extraction")
             continue
+        _seen_receipts.add(digest)
         for item in receipt.items:
             if any(_same_purchase(item, p) for p in existing):
                 continue
@@ -223,7 +229,7 @@ async def scan_new_purchases(ctx: dict, user_id: str | None = None) -> int:
                 purchase=purchase,
             )
             found += 1
-    if not found:
+    if not found and not ctx.get("quiet"):
         await log_event(
             "purchase_found",
             f"Scanned {len(receipts)} receipt{'s' if len(receipts) != 1 else ''}: nothing new, "

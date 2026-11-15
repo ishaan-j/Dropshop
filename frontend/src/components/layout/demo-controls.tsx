@@ -68,7 +68,7 @@ export function DemoControls() {
             <ScanLine className="mt-0.5 h-4 w-4 shrink-0 text-[#12372A]" />
             <span>
               <span className="block text-sm font-medium text-[#17211C]">Scan for receipts</span>
-              <span className="block text-xs text-[#5E6B63]">Find purchases that aren&apos;t tracked yet.</span>
+              <span className="block text-xs text-[#5E6B63]">Desktop, Downloads, and the Sentient knowledge base. New files are picked up on their own too.</span>
             </span>
           </Menu.Item>
           <Menu.Item className={ITEM} disabled={busy !== null} onSelect={() => run("drop")}>

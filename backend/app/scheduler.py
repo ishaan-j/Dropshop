@@ -37,3 +37,23 @@ async def run_forever() -> None:
         if now >= next_poll:
             next_poll = now + poll_every
             await _run(tasks.poll_prices)
+
+
+async def _quiet_scan(ctx: dict) -> int:
+    ctx = {**ctx, "quiet": True}
+    return await tasks.scan_new_purchases(ctx)
+
+
+async def run_receipt_scans() -> None:
+    """Read the knowledge base, Desktop, and Downloads on a timer. No button press required.
+
+    A scan that finds nothing is quiet, so the activity feed is not filled with repeat notices.
+    """
+    every = 60.0 if get_settings().demo_mode else 900.0
+    next_scan = time.monotonic() + 15.0
+    while True:
+        await asyncio.sleep(1.0)
+        now = time.monotonic()
+        if now >= next_scan:
+            next_scan = now + every
+            await _run(_quiet_scan)

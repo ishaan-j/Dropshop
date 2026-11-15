@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: float = 20.0  # whole call; then fall back to the mock so a live demo never hangs
     sentient_os_enabled: bool = False
     sentient_knowledge_dir: str = "~/Sentient OS - Knowledge Base"  # where Sentient OS writes its Markdown notes
+    # Also read for receipt files, so a user can drop a .md/.txt/.eml on the Desktop instead of
+    # copying it into the knowledge base. Comma-separated, ~ is expanded.
+    receipt_watch_dirs: str = "~/Desktop,~/Downloads"
     # Shared secret for POST /automations/*, the endpoints an outside automation (a Grok Bot routine)
     # calls. Empty = those endpoints are switched off.
     automation_token: str = ""
