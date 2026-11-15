@@ -59,7 +59,6 @@ flowchart LR
 | 3. AI and agents | [`backend/agents/`](backend/agents/LAYER.md) | Ishaan Jagali & Ayushi Biswas | Gemini (receipts, policies, eligibility, explanations), Sentient OS, Playwright claim bot |
 | 4. Database | [`backend/data/`](backend/data/LAYER.md) | Ishaan Jagali | Tiger Data hypertables, MongoDB collections and indexes, seed data |
 | 5. Financial | [`backend/finance/`](backend/finance/LAYER.md) + [`solana/`](solana/LAYER.md) | Akshit Saraf | Nessie sandbox banking, Solana + Anchor savings vault on devnet |
-| 6. Deployment | [`infra/`](infra/LAYER.md) | TBD | Docker images, Vultr hosting for API, workers and browser automation |
 
 
 ## Quick start
@@ -87,4 +86,8 @@ Until real integrations land, the API serves **mock data** (`MOCK_MODE=true`), s
 ## Built With:
 
 - **Cursor** is the team's core AI coding agent. **Claude Code** is also used.
-- Gemini API, MongoDB Atlas, Tiger Data, Solana, Capital One Nessie, Sentient OS, Vultr
+- Gemini API, MongoDB Atlas, Tiger Data, Solana, Capital One Nessie, Sentient OS
+
+## Authors:
+
+Made with ❤️ by: Aashita Singh, Akshit Saraf, Ayushi Biswas, Ishaan Jagali
