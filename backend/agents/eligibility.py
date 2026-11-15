@@ -45,11 +45,10 @@ def _precheck(
             confidence=1.0,
         )
     if policy.window_days is None:
-        return EligibilityResult(
-            eligible=False,
-            reason=f"{policy.retailer} has no known price-adjustment policy.",
-            confidence=0.9,
-        )
+        summary = policy.summary.strip()
+        looked_up = summary and "no known price-adjustment policy" not in summary.lower()
+        reason = summary if looked_up else f"{policy.retailer} has no known price-adjustment policy."
+        return EligibilityResult(eligible=False, reason=reason, confidence=0.9)
     end = _window_end(purchase, policy)
     if end is not None and now > end:
         return EligibilityResult(

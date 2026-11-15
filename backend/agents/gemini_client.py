@@ -118,6 +118,38 @@ async def generate_structured(
     return _resolve_mock(mock, schema)
 
 
+async def generate_grounded_text(prompt: str, *, timeout_seconds: float = 25.0) -> str:
+    """Ask Gemini with Google Search turned on. Raises GeminiUnavailable in mock mode.
+
+    Search and structured JSON don't mix on this API, so the caller parses the text.
+    """
+    if _use_mock():
+        raise GeminiUnavailable("Gemini search is off in mock mode")
+
+    from google.genai import types
+
+    config = types.GenerateContentConfig(
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+        temperature=0.0,
+        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+    )
+    last_error: Exception = TimeoutError("no time left to call Gemini")
+    for model in model_chain():
+        try:
+            resp = await asyncio.wait_for(
+                _client().aio.models.generate_content(model=model, contents=prompt, config=config),
+                timeout=timeout_seconds,
+            )
+            text = (getattr(resp, "text", None) or "").strip()
+            if text:
+                return text
+            last_error = ValueError("empty Gemini response")
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Gemini search via %s failed (%s: %s)", model, type(exc).__name__, (str(exc) or "timed out")[:160])
+    raise last_error
+
+
 def model_chain() -> list[str]:
     """The primary model followed by the fallbacks, without duplicates."""
     settings = get_settings()

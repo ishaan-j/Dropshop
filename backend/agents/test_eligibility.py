@@ -55,3 +55,8 @@ def test_stored_window_end_wins():
 def test_unknown_retailer():
     r = run(purchase(retailer="Shady Shop"), 100)
     assert not r.eligible and "no known" in r.reason
+
+
+def test_bh_photo_drop_inside_the_return_window_is_eligible():
+    r = run(purchase(retailer="B&H Photo Video", paid=67900, days_ago=2), 57715)
+    assert r.eligible and r.refund_cents == 10185

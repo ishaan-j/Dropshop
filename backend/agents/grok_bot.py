@@ -103,6 +103,60 @@ async def write_claim_message(facts: str, *, client: httpx.AsyncClient | None = 
             await client.aclose()
 
 
+_POLICY_LOOKUP = (
+    "Find this retailer's published post-purchase price-adjustment policy: a refund of the "
+    "difference when the retailer's OWN price on the same item drops after the customer already bought it. "
+    "Search the retailer's official help pages. Reply with JSON only, keys: "
+    "policy_url (string or null), window_days (integer or null), conditions (array of short strings), "
+    "summary (one sentence). "
+    "window_days is days after purchase or delivery in which that refund can be requested. "
+    "Use null for window_days unless an official page states a number or states that the window is the "
+    "return period and states how many days that return period is. A competitor price-match that only "
+    "applies before purchase is not a post-purchase adjustment. Never guess a number. "
+    "policy_url must be the official page you used, or null."
+)
+
+
+def _response_text(payload: dict) -> str:
+    parts = []
+    for item in payload.get("output") or []:
+        if item.get("type") != "message":
+            continue
+        for content in item.get("content") or []:
+            if content.get("type") == "output_text" and content.get("text"):
+                parts.append(content["text"])
+    return "\n".join(parts).strip()
+
+
+async def find_policy(retailer: str, *, client: httpx.AsyncClient | None = None) -> str | None:
+    """Ask Grok, with web search, for a retailer's policy. Returns the reply text, or None when
+    Grok is off or the call fails."""
+    if not enabled():
+        return None
+    settings = get_settings()
+    own_client = client is None
+    client = client or httpx.AsyncClient()
+    try:
+        response = await client.post(
+            f"{settings.xai_base_url.rstrip('/')}/responses",
+            headers={"Authorization": f"Bearer {settings.xai_api_key}"},
+            json={
+                "model": settings.xai_model,
+                "tools": [{"type": "web_search"}],
+                "input": f"{_POLICY_LOOKUP}\n\nUse web search. Retailer: {retailer}",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        return _response_text(response.json()) or None
+    except Exception as exc:
+        logger.warning("Grok policy lookup failed for %s (%s)", retailer, type(exc).__name__)
+        return None
+    finally:
+        if own_client:
+            await client.aclose()
+
+
 async def _grok_review(
     stored: RetailerPolicy, page_text: str, client: httpx.AsyncClient
 ) -> PolicyReview:
